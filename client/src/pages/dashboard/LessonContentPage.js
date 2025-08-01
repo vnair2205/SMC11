@@ -8,6 +8,7 @@ import Preloader from '../../components/common/Preloader';
 import { Modal, ModalText, ModalButtonContainer, ModalButton } from '../../components/common/Modal';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
+import { AnimatePresence } from 'framer-motion';
 
 const LessonWrapper = styled.div`
     padding: 1rem;
@@ -20,8 +21,9 @@ const VideoContainer = styled.div`
     overflow: hidden;
     margin-bottom: 1.5rem;
     border-radius: 12px;
-
-    iframe {
+    background-color: #000; /* Ensures a black background for unavailable video message */
+    
+    & > iframe {
         position: absolute;
         top: 0;
         left: 0;
@@ -32,16 +34,19 @@ const VideoContainer = styled.div`
 `;
 
 const NoVideoPlaceholder = styled.div`
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
-    height: 400px;
+    height: 100%;
     background-color: #33333d;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #a0a0a0;
     font-style: italic;
-    border-radius: 12px;
-    margin-bottom: 1.5rem;
+    font-size: 1.2rem;
+    padding: 1rem;
 `;
 
 const VideoControls = styled.div`
@@ -136,9 +141,9 @@ const LessonContentPage = () => {
     const isRTL = ['ar', 'ur'].includes(parentCourse?.language);
     const isEnglishCourse = parentCourse?.language === 'en';
 
-    const getYouTubeEmbedUrl = (query) => {
-        const cleanedQuery = encodeURIComponent(query + " educational video tutorial");
-        return `https://www.youtube.com/embed?listType=search&list=${cleanedQuery}&autoplay=0`;
+    // UPDATED: Correct YouTube embed URL function
+    const getYouTubeEmbedUrl = (videoId) => {
+        return `https://www.youtube.com/embed/${videoId}?autoplay=0`;
     };
 
     const fetchCourseData = useCallback(async () => {
@@ -276,11 +281,8 @@ const LessonContentPage = () => {
         return <ErrorMessage>{t('errors.content_not_found')}</ErrorMessage>;
     }
     
-    const youtubeSearchQuery = `${lesson.englishTitle || lesson.title} ${parentCourse.englishTopic || parentCourse.topic}`;
-    console.log("Youtube Query:", youtubeSearchQuery);
-
-
-    const currentVideo = videoHistory[currentVideoIndex];
+    // UPDATED: Correctly extract videoId for embed URL
+    const videoId = videoHistory[currentVideoIndex]?.videoUrl?.split('v=')[1];
 
     return (
         <PageContainer dir={isRTL ? 'rtl' : 'ltr'}>
@@ -293,7 +295,6 @@ const LessonContentPage = () => {
             </Modal>
             
             <Title>
-                {/* NEW: Conditional rendering based on isEnglishCourse */}
                 {isEnglishCourse ?
                     `${currentSubtopic.title} - ${lesson.title}`
                 :
@@ -301,34 +302,26 @@ const LessonContentPage = () => {
                 }
             </Title>
             
-            {currentVideo && currentVideo.videoUrl ? (
-                <VideoContainer>
+            <VideoContainer>
+                {videoId ? (
                     <iframe
-                        key={currentVideo.videoUrl}
-                        src={currentVideo.videoUrl}
+                        key={videoId}
+                        src={getYouTubeEmbedUrl(videoId)}
                         title={lesson.title}
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen>
                     </iframe>
-                </VideoContainer>
-            ) : (
-                <NoVideoPlaceholder>
-                    {t('errors.no_suitable_video_found_placeholder')}
-                    <VideoContainer style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', borderRadius: 0 }}>
-                        <iframe
-                            src={getYouTubeEmbedUrl(youtubeSearchQuery)}
-                            title="YouTube video player search results"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                            allowFullScreen
-                        ></iframe>
-                    </VideoContainer>
-                </NoVideoPlaceholder>
-            )}
+                ) : (
+                    <NoVideoPlaceholder>
+                        {t('errors.no_suitable_video_found_placeholder')}
+                    </NoVideoPlaceholder>
+                )}
+            </VideoContainer>
 
             <VideoControls>
-                {currentVideo && currentVideo.videoChannelId && (
-                    <CreditLink href={`https://www.youtube.com/channel/${currentVideo.videoChannelId}`} target="_blank" rel="noopener noreferrer">
-                        {t('video_credit_label', { defaultValue: 'Credit' })}: {currentVideo.videoChannelTitle}
+                {videoHistory[currentVideoIndex]?.videoChannelId && (
+                    <CreditLink href={`https://www.youtube.com/channel/${videoHistory[currentVideoIndex].videoChannelId}`} target="_blank" rel="noopener noreferrer">
+                        {t('video_credit_label', { defaultValue: 'Credit' })}: {videoHistory[currentVideoIndex].videoChannelTitle}
                     </CreditLink>
                 )}
                 <VideoNav>

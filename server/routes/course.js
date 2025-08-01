@@ -1,14 +1,14 @@
-// server/routes/course.js
 const express = require('express');
-const router = express.Router(); // CORRECTED LINE: Initialize router correctly
-const auth = require('../middleware/auth'); 
+const router = express.Router();
+const auth = require('../middleware/auth');
 
-const { 
+const {
     generateObjective,
     generateOutcome,
     generateIndex,
     refineTopic,
     refineLesson,
+    refineSingleObjective,
     getCourseById,
     generateLessonContent,
     changeLessonVideo,
@@ -18,7 +18,7 @@ const {
     generateQuiz,
     getVerificationData,
     completeQuiz,
-    getUsersCourses // Import the new getUsersCourses function
+    getUsersCourses
 } = require('../controllers/courseController');
 
 // --- PUBLIC ROUTE ---
@@ -28,8 +28,10 @@ router.get('/verify/:courseId/:userId', getVerificationData);
 
 // --- PROTECTED ROUTES ---
 // All routes below this line require a valid token to access.
+router.post('/verify/:courseId/:userId', getVerificationData);
 router.post('/refine-topic', auth, refineTopic);
 router.post('/refine-lesson', auth, refineLesson);
+router.post('/refine-objective', auth, refineSingleObjective);
 router.post('/generate-objective', auth, generateObjective);
 router.post('/generate-outcome', auth, generateOutcome);
 router.post('/generate-index', auth, generateIndex);
@@ -41,7 +43,7 @@ router.get('/export/:courseId', auth, exportCourseAsPdf);
 router.post('/quiz/generate', auth, generateQuiz);
 router.put('/complete-quiz/:courseId', auth, completeQuiz);
 router.get('/:courseId', auth, getCourseById);
-router.get('/', auth, getUsersCourses); // New route to get all courses for the logged-in user with filters/pagination
+router.get('/', auth, getUsersCourses);
 
 
 module.exports = router;

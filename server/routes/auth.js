@@ -1,13 +1,13 @@
 // server/routes/auth.js
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/auth'); // Import our new middleware
-const { 
-    registerUser, 
-    loginUser, 
+const auth = require('../middleware/auth');
+const {
+    registerUser,
+    loginUser,
     forceLoginUser,
     logoutUser,
-    verifyPhoneOtp, 
+    verifyPhoneOtp,
     verifyEmailOtp,
     checkEmailExists,
     checkPhoneExists,
@@ -19,12 +19,11 @@ const {
     resetPassword
 } = require('../controllers/authController');
 
-// Add these lines for debugging:
-console.log('auth middleware type:', typeof auth); // <-- NEW: Check type of auth middleware
+console.log('auth middleware type:', typeof auth);
 console.log('registerUser type:', typeof registerUser);
 console.log('loginUser type:', typeof loginUser);
 console.log('forceLoginUser type:', typeof forceLoginUser);
-console.log('logoutUser type:', typeof logoutUser); // Add more checks for other imported functions
+console.log('logoutUser type:', typeof logoutUser);
 console.log('verifyPhoneOtp type:', typeof verifyPhoneOtp);
 console.log('verifyEmailOtp type:', typeof verifyEmailOtp);
 console.log('checkEmailExists type:', typeof checkEmailExists);
@@ -52,6 +51,6 @@ router.post('/reset-password/:token', resetPassword);
 router.post('/check-email', checkEmailExists);
 router.post('/check-phone', checkPhoneExists);
 
-console.log('Type of router before export in auth.js:', typeof router); // <-- NEW: Check type of router itself
+console.log('Type of router before export in auth.js:', typeof router);
 
 module.exports = router;

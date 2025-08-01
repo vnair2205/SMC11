@@ -10,7 +10,7 @@ const VideoHistorySchema = new mongoose.Schema({
 
 const LessonSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  englishTitle: { type: String }, // Added: English version of lesson title
+  englishTitle: { type: String },
   content: { type: String },
   videoUrl: { type: String },
   videoChannelId: { type: String },
@@ -22,7 +22,7 @@ const LessonSchema = new mongoose.Schema({
 
 const SubtopicSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  englishTitle: { type: String }, // Added: English version of subtopic title
+  englishTitle: { type: String },
   lessons: [LessonSchema]
 });
 
@@ -42,9 +42,9 @@ const CourseSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  englishTopic: { type: String }, // Added: English version of course topic
-  objective: {
-    type: String,
+  englishTopic: { type: String },
+  objective: { // CHANGED: Now an array of strings
+    type: [String],
   },
   outcome: {
     type: String,
@@ -91,7 +91,6 @@ const CourseSchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// Apply the pagination plugin to your schema
 CourseSchema.plugin(mongoosePaginate);
 
 module.exports = mongoose.model('Course', CourseSchema);

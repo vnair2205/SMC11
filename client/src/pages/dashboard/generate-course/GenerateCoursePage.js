@@ -1,4 +1,3 @@
-// client/src/pages/dashboard/generate-course/GenerateCoursePage.js
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
@@ -29,21 +28,25 @@ const GenerateCoursePage = () => {
         courseId: null,
         topic: '',
         englishTopic: '',
-        objective: '',
-        outcome: '',
+        objective: [],
+        outcome: [], // CHANGED: Outcome is now an array
         numSubtopics: 1,
         language: 'en',
         languageName: 'English',
         nativeName: 'English',
         index: null,
         customLessons: [],
+        customObjectives: [],
     });
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     
-    const [topicSuggestions, setTopicSuggestions] = useState([]); 
-    const [isRefineModalOpen, setIsRefineModalOpen] = useState(false);
-
+    const [topicSuggestions, setTopicSuggestions] = useState([]);
+    const [isRefineTopicModalOpen, setIsRefineTopicModalOpen] = useState(false);
+    
+    const [isRefineObjectiveModalOpen, setIsRefineObjectiveModalOpen] = useState(false);
+    const [objectiveSuggestions, setObjectiveSuggestions] = useState([]);
+    
     const nextStep = () => setCurrentStep(prev => prev + 1);
     const prevStep = () => setCurrentStep(prev => prev - 1);
 
@@ -55,59 +58,58 @@ const GenerateCoursePage = () => {
     const handleTopicSubmit = async () => {
         setIsLoading(true);
         setError('');
-        
+
         const { topic, languageName, nativeName } = courseData;
 
         const token = localStorage.getItem('token');
         try {
             const config = { headers: { 'Content-Type': 'application/json', 'x-auth-token': token } };
-            
+
             const body = JSON.stringify({ topic, languageName, nativeName });
             const res = await axios.post('/api/course/refine-topic', body, config);
-            
-            setTopicSuggestions(res.data.suggestions); 
-            setIsRefineModalOpen(true);
+
+            setTopicSuggestions(res.data.suggestions);
+            setIsRefineTopicModalOpen(true);
         } catch (err) {
             console.error("Error in handleTopicSubmit (refine-topic):", err.response?.data || err.message);
             const originalTopic = courseData.topic;
-            await proceedToObjectiveGeneration({ title: originalTopic, englishTitle: originalTopic }); 
+            await proceedToObjectiveGeneration({ title: originalTopic, englishTitle: originalTopic });
         } finally {
             setIsLoading(false);
         }
     };
-    
+
     const proceedToObjectiveGeneration = async (selectedSuggestion) => {
-        setIsRefineModalOpen(false); 
+        setIsRefineTopicModalOpen(false);
         setIsLoading(true);
         setError('');
         const token = localStorage.getItem('token');
-        
-        // NEW LOGIC: Use the English title for both fields if the course language is English
+
         const finalTopic = courseData.language === 'en' ? selectedSuggestion.englishTitle : selectedSuggestion.title;
         const finalEnglishTopic = selectedSuggestion.englishTitle;
 
         try {
-            const updatedData = { 
-                ...courseData, 
+            const updatedData = {
+                ...courseData,
                 topic: finalTopic,
                 englishTopic: finalEnglishTopic
             };
             setCourseData(updatedData);
 
             const config = { headers: { 'Content-Type': 'application/json', 'x-auth-token': token } };
-            const body = JSON.stringify({ 
+            const body = JSON.stringify({
                 topic: updatedData.topic,
                 englishTopic: updatedData.englishTopic,
-                language: updatedData.language, 
-                languageName: updatedData.languageName, 
-                nativeName: updatedData.nativeName 
+                language: updatedData.language,
+                languageName: updatedData.languageName,
+                nativeName: updatedData.nativeName
             });
             const res = await axios.post('/api/course/generate-objective', body, config);
-            
-            updateCourseData({ 
-                objective: res.data.objective, 
-                courseId: res.data.courseId, 
-                topic: updatedData.topic, 
+
+            updateCourseData({
+                objective: res.data.objective,
+                courseId: res.data.courseId,
+                topic: updatedData.topic,
                 englishTopic: updatedData.englishTopic
             });
             nextStep();
@@ -120,16 +122,50 @@ const GenerateCoursePage = () => {
         }
     };
     
+    const handleAddObjective = async (objectiveText) => {
+        setIsLoading(true);
+        setError('');
+        
+        if (courseData.customObjectives.length >= 2) {
+             setError(t('course_generation.add_custom_objective_heading'));
+             setIsLoading(false);
+             return;
+        }
+
+        try {
+            const token = localStorage.getItem('token');
+            const config = { headers: { 'Content-Type': 'application/json', 'x-auth-token': token } };
+            const body = { courseId: courseData.courseId, newObjectiveText: objectiveText };
+            const res = await axios.post('/api/course/refine-objective', body, config);
+            
+            setObjectiveSuggestions(res.data.suggestions);
+            setIsRefineObjectiveModalOpen(true);
+        } catch (err) {
+            console.error("Error refining objective:", err.response?.data || err.message);
+            setError(t('course_generation.suggestions_error'));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSelectObjectiveSuggestion = (suggestion) => {
+        updateCourseData({ customObjectives: [...courseData.customObjectives, suggestion] });
+        setIsRefineObjectiveModalOpen(false);
+    };
+    
     const handleObjectiveSubmit = async () => {
         setIsLoading(true);
         setError('');
         const token = localStorage.getItem('token');
         try {
             const config = { headers: { 'Content-Type': 'application/json', 'x-auth-token': token } };
-            const { courseId, topic, objective, language, languageName, nativeName, englishTopic } = courseData; 
-            const body = JSON.stringify({ courseId, topic, objective, language, languageName, nativeName, englishTopic });
+            const finalObjectives = [...courseData.objective, ...courseData.customObjectives];
+            const { courseId, topic, language, languageName, nativeName, englishTopic } = courseData;
+            const body = JSON.stringify({ courseId, topic, objective: finalObjectives, language, languageName, nativeName, englishTopic });
             const res = await axios.post('/api/course/generate-outcome', body, config);
-            updateCourseData({ outcome: res.data.outcome });
+            // CHANGED: Outcome from a single string to an array
+            const outcomeArray = res.data.outcome.split('\n').filter(o => o.trim() !== '');
+            updateCourseData({ outcome: outcomeArray });
             nextStep();
         } catch (err) {
             console.error("Error in handleObjectiveSubmit:", err.response?.data || err.message);
@@ -146,10 +182,10 @@ const GenerateCoursePage = () => {
         const token = localStorage.getItem('token');
         try {
             const config = { headers: { 'Content-Type': 'application/json', 'x-auth-token': token } };
-            const { courseId, topic, objective, outcome, numSubtopics, language, languageName, nativeName, customLessons, englishTopic } = courseData; 
+            const { courseId, topic, objective, outcome, numSubtopics, language, languageName, nativeName, customLessons, englishTopic } = courseData;
             const body = JSON.stringify({ courseId, topic, objective, outcome, numSubtopics, language, languageName, nativeName, customLessons, englishTopic });
             const res = await axios.post('/api/course/generate-index', body, config);
-            updateCourseData({ index: res.data.index, customLessons: [] }); 
+            updateCourseData({ index: res.data.index, customLessons: [] });
             if (callback) callback();
         } catch (err) {
             console.error("Error in handleGenerateIndex:", err.response?.data || err.message);
@@ -159,7 +195,7 @@ const GenerateCoursePage = () => {
             setIsLoading(false);
         }
     };
-    
+
     const renderStep = () => {
         switch (currentStep) {
             case 1:
@@ -167,9 +203,23 @@ const GenerateCoursePage = () => {
             case 2:
                 return <Step1_Topic nextStep={handleTopicSubmit} prevStep={prevStep} updateCourseData={updateCourseData} data={courseData} isLoading={isLoading} error={error} />;
             case 3:
-                return <Step2_Objective nextStep={handleObjectiveSubmit} prevStep={prevStep} updateCourseData={updateCourseData} data={courseData} isLoading={isLoading} />;
+                return <Step2_Objective
+                    nextStep={handleObjectiveSubmit}
+                    prevStep={prevStep}
+                    updateCourseData={updateCourseData}
+                    data={courseData}
+                    isLoading={isLoading}
+                    error={error}
+                    handleAddObjective={handleAddObjective}
+                />;
             case 4:
-                return <Step3_Outcome nextStep={nextStep} prevStep={prevStep} updateCourseData={updateCourseData} data={courseData} isLoading={isLoading} />;
+                return <Step3_Outcome
+                    nextStep={nextStep}
+                    prevStep={prevStep}
+                    updateCourseData={updateCourseData}
+                    data={courseData}
+                    isLoading={isLoading}
+                />;
             case 5:
                 return <Step4_Subtopics nextStep={() => handleGenerateIndex(nextStep)} prevStep={prevStep} updateCourseData={updateCourseData} data={courseData} />;
             case 6:
@@ -183,18 +233,25 @@ const GenerateCoursePage = () => {
         <PageWrapper>
             {isLoading && <Preloader />}
             
-            <Modal isOpen={isRefineModalOpen} onClose={() => setIsRefineModalOpen(false)} title="Refine Your Topic">
-                <ModalText>We've generated a few alternative topics. Select one, or continue with your original topic.</ModalText>
+            <Modal isOpen={isRefineTopicModalOpen} onClose={() => setIsRefineTopicModalOpen(false)} title={t('course_generation.refine_topic_modal_title')}>
+                <ModalText>{t('course_generation.refine_topic_modal_message')}</ModalText>
                 <ModalButtonContainer style={{ flexDirection: 'column', marginTop: '1.5rem' }}>
                     {topicSuggestions.map((suggestion, index) => (
-                        <SuggestionButton key={index} onClick={() => proceedToObjectiveGeneration(suggestion)}>
+                        <SuggestionButton primary key={index} onClick={() => proceedToObjectiveGeneration(suggestion)}>
                             {courseData.language === 'en' ? suggestion.title : `${suggestion.title} (${suggestion.englishTitle})`}
                         </SuggestionButton>
                     ))}
-                    <hr style={{width: '100%', border: '1px solid #555', margin: '0.5rem 0'}} />
-                    <SuggestionButton primary onClick={() => proceedToObjectiveGeneration({ title: courseData.topic, englishTitle: courseData.englishTopic || courseData.topic })}>
-                        Continue with: "{courseData.topic}"
-                    </SuggestionButton>
+                </ModalButtonContainer>
+            </Modal>
+
+            <Modal isOpen={isRefineObjectiveModalOpen} onClose={() => setIsRefineObjectiveModalOpen(false)} title={t('course_generation.refine_objective_modal_title')}>
+                <ModalText>{t('course_generation.refine_objective_modal_message')}</ModalText>
+                <ModalButtonContainer style={{ flexDirection: 'column', marginTop: '1.5rem' }}>
+                    {objectiveSuggestions.map((suggestion, index) => (
+                        <SuggestionButton primary key={index} onClick={() => handleSelectObjectiveSuggestion(suggestion)}>
+                            {suggestion}
+                        </SuggestionButton>
+                    ))}
                 </ModalButtonContainer>
             </Modal>
 

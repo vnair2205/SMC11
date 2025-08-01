@@ -1,12 +1,18 @@
 // server/controllers/courseController.js
 const { google } = require('googleapis');
-const { generateWithFallback, getNextYoutubeKey, getNextPexelsKey, getOpenAIApiKey } = require('../utils/apiKeyManager'); // Added getOpenAIApiKey
+const { generateWithFallback, getNextYoutubeKey, getNextPexelsKey, getOpenAIApiKey } = require('../utils/apiKeyManager');
 const Course = require('../models/Course');
 const axios = require('axios');
 const puppeteer = require('puppeteer');
-const mongoose = require('mongoose'); // Added mongoose for ObjectId
+const mongoose = require('mongoose');
 
 const cleanAIText = (text) => {
+    if (typeof text !== 'string') return '';
+    const lines = text.split(/\n\s*(?=\d+\.)/g);
+    return lines.map(line => line.replace(/^\d+\.\s*/, '').trim()).filter(line => line.length > 0);
+};
+
+const cleanSingleLine = (text) => {
     if (typeof text !== 'string') return '';
     return text.replace(/[\*#]/g, '').trim();
 };
@@ -21,7 +27,7 @@ const fetchCourseThumbnail = async (topic) => {
 
         const query = encodeURIComponent(topic);
         const pexelsApiUrl = `https://api.pexels.com/v1/search?query=${query}&per_page=1&orientation=landscape`;
-        
+
         console.log(`[Pexels] Searching for thumbnail for topic: "${topic}"`);
         const response = await axios.get(pexelsApiUrl, {
             headers: {
@@ -43,14 +49,13 @@ const fetchCourseThumbnail = async (topic) => {
     }
 };
 
-// Helper function to call OpenAI API
 const callOpenAI = async (prompt, response_format = {}) => {
-    const openaiApiKey = getOpenAIApiKey(); // Assuming getOpenAIApiKey exists
+    const openaiApiKey = getOpenAIApiKey();
     if (!openaiApiKey) {
         throw new Error("OpenAI API key not configured.");
     }
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-        model: "gpt-3.5-turbo-1106", // Or your preferred model
+        model: "gpt-3.5-turbo-1106",
         messages: [{ role: "user", content: prompt }],
         response_format: response_format
     }, {
@@ -62,27 +67,24 @@ const callOpenAI = async (prompt, response_format = {}) => {
     return response.data.choices[0].message.content;
 };
 
-
 exports.refineTopic = async (req, res) => {
     console.log('[API] /refine-topic called');
     const { topic, languageName, nativeName } = req.body;
     if (!topic) return res.status(400).json({ msg: 'Topic is required' });
     try {
-        // PROMPT MODIFICATION: Request both native and English titles
         const prompt = `A user wants to learn about: "${topic}". Suggest three improved course titles. IMPORTANT: Your response MUST be a valid JSON array of objects. Each object should have a "title" in the ${languageName} (${nativeName}) language and an "englishTitle" in English. Example: [{"title": "Title 1", "englishTitle": "English Title 1"}, {"title": "Title 2", "englishTitle": "English Title 2"}, {"title": "Title 3", "englishTitle": "English Title 3"}]`;
         console.log('[AI] Generating topic suggestions...');
-        const rawText = await generateWithFallback(prompt, { type: "json_object" }); // Ensure JSON output
+        const rawText = await generateWithFallback(prompt, { type: "json_object" });
         const cleanedJsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         let suggestions = JSON.parse(cleanedJsonString);
-        
-        // Ensure suggestions is an array and contains title and englishTitle
+
         if (!Array.isArray(suggestions) || !suggestions.every(s => s.title && s.englishTitle)) {
             console.error("AI response for refineTopic has invalid structure:", suggestions);
             throw new Error("AI response for refineTopic has invalid structure.");
         }
 
         console.log('[AI] Suggestions generated successfully.');
-        res.json({ suggestions }); // Now `suggestions` will contain both native and English titles
+        res.json({ suggestions });
     } catch (error) {
         console.error("--- ERROR IN refineTopic ---", error);
         res.status(500).json({ msgKey: "errors.generic" });
@@ -91,18 +93,15 @@ exports.refineTopic = async (req, res) => {
 
 exports.generateObjective = async (req, res) => {
     console.log('[API] /generate-objective called');
-    // MODIFICATION: Receive englishTopic explicitly from the client (selected from refined topics)
-    const { topic, englishTopic, language, languageName, nativeName } = req.body; 
+    const { topic, englishTopic, language, languageName, nativeName } = req.body;
     const userId = req.user.id;
-    // MODIFICATION: Validate that both topic (native) and englishTopic are provided
     if (!topic || !englishTopic) return res.status(400).json({ msg: 'Topic and English topic are required' });
     try {
-        const prompt = `Generate 4-5 learning objectives for a course on: "${topic}". The response must be in the ${languageName} (${nativeName}) language.`;
+        const prompt = `Generate 4-5 learning objectives for a course on: "${topic}". The response must be in a numbered list format in the ${languageName} (${nativeName}) language.`;
         console.log('[AI] Generating course objectives...');
         const rawText = await generateWithFallback(prompt);
-        const cleanedText = cleanAIText(rawText);
+        const cleanedObjectives = cleanAIText(rawText);
 
-        // MODIFICATION: Use the *correct* englishTopic for thumbnail search
         const thumbnailUrl = await fetchCourseThumbnail(englishTopic);
         if (thumbnailUrl) {
             console.log('[DB] Thumbnail fetched, adding to course data.');
@@ -113,9 +112,9 @@ exports.generateObjective = async (req, res) => {
         console.log('[DB] Creating new course...');
         const newCourse = new Course({
             user: userId,
-            topic, // This will store the topic in the selected native language
-            englishTopic, // This will store the English version of the main topic, correctly received from client
-            objective: cleanedText,
+            topic,
+            englishTopic,
+            objective: cleanedObjectives,
             language,
             languageName,
             nativeName,
@@ -123,7 +122,7 @@ exports.generateObjective = async (req, res) => {
         });
         await newCourse.save();
         console.log('[DB] Course created with ID:', newCourse._id);
-        res.json({ objective: cleanedText, courseId: newCourse._id });
+        res.json({ objective: cleanedObjectives, courseId: newCourse._id });
     } catch (error) {
         console.error("--- ERROR IN generateObjective ---", error);
         console.error("Timestamp:", new Date().toISOString());
@@ -136,32 +135,31 @@ exports.generateObjective = async (req, res) => {
     }
 };
 
-exports.refineLesson = async (req, res) => {
-    console.log('[API] /refine-lesson called');
-    const { topic, subtopicTitle, lessonInput, languageName, nativeName } = req.body;
-    // Assuming you now receive englishTopic, englishSubtopicTitle in the request or fetch them.
-    // For this example, I'll pass them to the AI prompt directly.
-    const { englishTopic, englishSubtopicTitle } = req.body; // Assuming these are passed from client
+exports.refineSingleObjective = async (req, res) => {
+    console.log('[API] /refine-objective called');
+    const { courseId, newObjectiveText } = req.body;
+    const userId = req.user.id;
+    if (!courseId || !newObjectiveText) return res.status(400).json({ msg: 'Course ID and objective text are required' });
 
-    if (!topic || !subtopicTitle || !lessonInput) return res.status(400).json({ msg: 'Topic, subtopic, and lesson are required' });
     try {
-        const prompt = `For a course on "${topic}" (English: ${englishTopic || topic}) in the subtopic "${subtopicTitle}" (English: ${englishSubtopicTitle || subtopicTitle}), a user entered a lesson idea: "${lessonInput}". Suggest three improved titles. IMPORTANT: Your response MUST be a valid JSON array of three objects. Each object should have a "title" in the ${languageName} (${nativeName}) language and an "englishTitle" in English. Example: [{"title": "Title 1", "englishTitle": "English Title 1"}, {"title": "Title 2", "englishTitle": "English Title 2"}, {"title": "Title 3", "englishTitle": "English Title 3"}]`;
-        console.log('[AI] Generating lesson suggestions...');
-        const rawText = await generateWithFallback(prompt, { type: "json_object" }); // Pass response_format
-        const cleanedJsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-        let parsedSuggestions = JSON.parse(cleanedJsonString);
+        const course = await Course.findOne({ _id: courseId, user: userId });
+        if (!course) return res.status(404).json({ msg: 'Course not found' });
 
-        // Ensure suggestions is an array and contains title and englishTitle
-        // The AI response directly contains the array of suggestions in this case, not a root object with 'suggestions' key
-        if (!Array.isArray(parsedSuggestions) || !parsedSuggestions.every(s => s.title && s.englishTitle)) {
-            console.error("AI response for refineLesson has invalid structure:", parsedSuggestions);
-            throw new Error("AI response for refineLesson has invalid structure.");
+        const prompt = `For a course on "${course.topic}" in the ${course.languageName} language, a user has provided this learning objective: "${newObjectiveText}". Refine this into 2-3 improved and concise versions. IMPORTANT: Your response MUST be a valid JSON array of strings. Each string should be a refined objective. Example: ["Refined objective 1", "Refined objective 2"]`;
+        
+        console.log('[AI] Refining single objective...');
+        const rawText = await generateWithFallback(prompt, { type: "json_object" });
+        const cleanedJsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const suggestions = JSON.parse(cleanedJsonString);
+
+        if (!Array.isArray(suggestions)) {
+             console.error("AI response for refineSingleObjective has invalid structure:", suggestions);
+            throw new Error("AI response for refineSingleObjective has invalid structure.");
         }
 
-        console.log('[AI] Lesson suggestions generated.');
-        res.json({ suggestions: parsedSuggestions }); // Send back structured suggestions
+        res.json({ suggestions });
     } catch (error) {
-        console.error("Error refining lesson:", error.response ? error.response.data : error.message);
+        console.error("Error refining single objective:", error);
         res.status(500).json({ msgKey: "errors.generic" });
     }
 };
@@ -171,10 +169,11 @@ exports.generateOutcome = async (req, res) => {
     const { courseId, topic, objective, languageName, nativeName } = req.body;
     if (!courseId || !topic || !objective) return res.status(400).json({ msg: 'ID, topic, and objective are required' });
     try {
-        const prompt = `Based on topic "${topic}" and objectives "${objective}", generate 4-5 learning outcomes. The response must be in the ${languageName} (${nativeName}) language.`;
+        const objectivesString = objective.join('; ');
+        const prompt = `Based on topic "${topic}" and objectives "${objectivesString}", generate 4-5 learning outcomes. The response must be in a numbered list format in the ${languageName} (${nativeName}) language.`;
         console.log('[AI] Generating course outcomes...');
         const rawText = await generateWithFallback(prompt);
-        const cleanedText = cleanAIText(rawText);
+        const cleanedText = cleanAIText(rawText).join('\n');
         console.log('[DB] Updating course with outcomes...');
         const course = await Course.findByIdAndUpdate(courseId, { outcome: cleanedText }, { new: true });
         if (!course) return res.status(404).json({ msg: 'Course not found' });
@@ -186,25 +185,55 @@ exports.generateOutcome = async (req, res) => {
     }
 };
 
+exports.refineLesson = async (req, res) => {
+    console.log('[API] /refine-lesson called');
+    const { topic, subtopicTitle, lessonInput, languageName, nativeName } = req.body;
+    const { englishTopic, englishSubtopicTitle } = req.body;
+
+    if (!topic || !subtopicTitle || !lessonInput) return res.status(400).json({ msg: 'Topic, subtopic, and lesson are required' });
+    try {
+        const prompt = `For a course on "${topic}" (English: ${englishTopic || topic}) in the subtopic "${subtopicTitle}" (English: ${englishSubtopicTitle || subtopicTitle}), a user entered a lesson idea: "${lessonInput}". Suggest three improved titles. IMPORTANT: Your response MUST be a valid JSON array of three objects. Each object should have a "title" in the ${languageName} (${nativeName}) language and an "englishTitle" in English. Example: [{"title": "Title 1", "englishTitle": "English Title 1"}, {"title": "Title 2", "englishTitle": "English Title 2"}, {"title": "Title 3", "englishTitle": "English Title 3"}]`;
+        console.log('[AI] Generating lesson suggestions...');
+        const rawText = await generateWithFallback(prompt, { type: "json_object" });
+        const cleanedJsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        let parsedSuggestions = JSON.parse(cleanedJsonString);
+
+        if (!Array.isArray(parsedSuggestions) || !parsedSuggestions.every(s => s.title && s.englishTitle)) {
+            console.error("AI response for refineLesson has invalid structure:", parsedSuggestions);
+            throw new Error("AI response for refineLesson has invalid structure.");
+        }
+
+        console.log('[AI] Lesson suggestions generated.');
+        res.json({ suggestions: parsedSuggestions });
+    } catch (error) {
+        console.error("Error refining lesson:", error.response ? error.response.data : error.message);
+        res.status(500).json({ msgKey: "errors.generic" });
+    }
+};
+
 exports.generateIndex = async (req, res) => {
     console.log('[API] /generate-index called');
     const { courseId, topic, objective, outcome, numSubtopics, language, languageName, nativeName, customLessons } = req.body;
-    // Assuming englishTopic is available here or can be fetched from the courseId
-    const { englishTopic } = req.body; // This should now reliably be the English topic from the client
+    const { englishTopic } = req.body;
 
     if (!courseId || !topic || !objective || !outcome || !numSubtopics) return res.status(400).json({ msg: 'Missing details for index generation.' });
 
-     try {
+    try {
         const subtopicText = numSubtopics === 1 ? '1 subtopic' : `${numSubtopics} subtopics`;
-        // MODIFIED PROMPT: Clarified which language to use for each field.
-        const prompt = `Generate a course index for "${topic}" with exactly ${subtopicText}, where each subtopic has 3-5 lessons. IMPORTANT: Your response MUST be a valid JSON object. All 'title' fields must be in the ${languageName} (${nativeName}) language, and all 'englishTitle' fields must be in English. If the language is English, the 'title' and 'englishTitle' should be the same. Structure: { "subtopics": [{ "title": "...", "englishTitle": "...", "lessons": [{"title": "...", "englishTitle": "..."}, {"title": "...", "englishTitle": "..."}] }] }`;
+        const objectivesString = objective.join('; ');
+        
+        const prompt = `Generate a comprehensive and detailed course index for "${topic}" that strictly follows the provided learning objectives and outcomes. The course should have exactly ${subtopicText}, and each subtopic should contain 3-5 lessons.
 
-        console.log('[AI] Generating course index with prompt:', prompt);
+        The core learning objectives for this course are: "${objectivesString}".
+        The expected outcomes are: "${outcome}".
+
+        IMPORTANT: Your response MUST be a valid JSON object. All 'title' fields must be in the ${languageName} (${nativeName}) language, and all 'englishTitle' fields must be in English. If the language is English, the 'title' and 'englishTitle' should be the same. Structure: { "subtopics": [{ "title": "...", "englishTitle": "...", "lessons": [{"title": "...", "englishTitle": "..."}, {"title": "...", "englishTitle": "..."}] }] }`;
+
+        console.log('[AI] Generating course index with a refined prompt...');
         const rawText = await generateWithFallback(prompt, { type: "json_object" });
         const cleanedJsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         let generatedIndex = JSON.parse(cleanedJsonString);
 
-        // Ensure generatedIndex.subtopics is an array
         if (!Array.isArray(generatedIndex.subtopics)) {
             console.error("AI response for generateIndex has invalid 'subtopics' structure:", generatedIndex);
             throw new Error("AI response for generateIndex has invalid 'subtopics' structure.");
@@ -213,10 +242,10 @@ exports.generateIndex = async (req, res) => {
         let formattedIndex = {
             subtopics: generatedIndex.subtopics.map(subtopic => ({
                 title: subtopic.title,
-                englishTitle: subtopic.englishTitle || subtopic.title, // Ensure englishTitle is saved, fallback if AI doesn't provide
+                englishTitle: subtopic.englishTitle || subtopic.title,
                 lessons: subtopic.lessons.map(lesson => ({
                     title: lesson.title,
-                    englishTitle: lesson.englishTitle || lesson.title, // Ensure englishTitle is saved, fallback if AI doesn't provide
+                    englishTitle: lesson.englishTitle || lesson.title,
                 }))
             }))
         };
@@ -230,7 +259,6 @@ exports.generateIndex = async (req, res) => {
                         lesson => lesson.title.toLowerCase() === customLesson.title.toLowerCase()
                     );
                     if (!isDuplicate) {
-                        // Custom lessons from client might only have 'title', so use that for englishTitle fallback
                         targetSubtopic.lessons.push({ title: customLesson.title, englishTitle: customLesson.englishTitle || customLesson.title });
                         console.log(`[DB] Added custom lesson "${customLesson.title}" to subtopic ${customLesson.subtopicIndex + 1}.`);
                     } else {
@@ -258,8 +286,6 @@ exports.getCourseById = async (req, res) => {
         const course = await Course.findOne({ _id: req.params.courseId, user: req.user.id });
         if (!course) return res.status(404).json({ msg: 'Course not found' });
 
-        // Ensure englishTopic, englishTitle are sent, even if they weren't saved in older courses
-        // This acts as a safeguard for existing data that might not have the englishTopic populated correctly.
         if (!course.englishTopic) {
             course.englishTopic = course.topic;
         }
@@ -307,8 +333,7 @@ exports.generateLessonContent = async (req, res) => {
         if (shouldGenerateNewContent) {
             try {
                 const apiKey = getNextYoutubeKey();
-                // These variables should now reliably hold English values due to changes in generateObjective and generateIndex
-                const englishCourseTopic = course.englishTopic || course.topic; 
+                const englishCourseTopic = course.englishTopic || course.topic;
                 const englishSubtopicTitle = subtopic.englishTitle || subtopic.title;
                 const englishLessonTitle = lesson.englishTitle || lesson.title;
 
@@ -319,14 +344,13 @@ exports.generateLessonContent = async (req, res) => {
                 const youtubeResponse = await axios.get(youtubeApiUrl);
                 
                 const videos = youtubeResponse.data.items;
-                // Prioritize videos that explicitly contain the course topic in their title
-                const relevantVideo = videos.find(v => 
-                    v.id.videoId && 
+                const relevantVideo = videos.find(v =>
+                    v.id.videoId &&
                     v.snippet.title.toLowerCase().includes(englishCourseTopic.toLowerCase())
-                ) || videos[0]; // Fallback to first if no specific match
+                ) || videos[0];
 
                 if (relevantVideo && relevantVideo.id && relevantVideo.id.videoId) {
-                    videoUrl = `https://www.youtube.com/embed/${relevantVideo.id.videoId}`; // Corrected YouTube embed URL format
+                    videoUrl = `https://www.youtube.com/embed/${relevantVideo.id.videoId}`;
                     videoChannelId = relevantVideo.snippet.channelId;
                     videoChannelTitle = relevantVideo.snippet.channelTitle;
                     console.log(`[YouTube] Found video ID: ${relevantVideo.id.videoId}`);
@@ -335,7 +359,6 @@ exports.generateLessonContent = async (req, res) => {
                 }
             } catch (youtubeError) {
                 console.error("[Error] YouTube API Error (generateLessonContent):", youtubeError.response ? youtubeError.response.data : youtubeError.message);
-                // Continue with content generation even if video fails
             }
 
             const prompt = `
@@ -359,7 +382,7 @@ exports.generateLessonContent = async (req, res) => {
             `;
             console.log('[AI] Generating lesson content with detailed structure...');
             const rawText = await generateWithFallback(prompt);
-            const cleanedText = cleanAIText(rawText);
+            const cleanedText = cleanSingleLine(rawText);
             console.log('[AI] Lesson content generated.');
 
             lesson.content = cleanedText;
@@ -406,9 +429,9 @@ exports.generateLessonContent = async (req, res) => {
             console.error('[DB] Failed to find and update specific lesson subdocument.');
             return res.status(404).json({ msg: 'Course or lesson not found during update.' });
         }
-        
+
         console.log('[DB] Lesson content and completion status saved.');
-        
+
         const updatedSubtopic = updatedCourse.index.subtopics.id(subtopicId);
         const updatedLesson = updatedSubtopic.lessons.id(lessonId);
 
@@ -444,7 +467,6 @@ exports.changeLessonVideo = async (req, res) => {
         }
 
         const apiKey = getNextYoutubeKey();
-        // These variables should now reliably hold English values due to changes in generateObjective and generateIndex
         const englishCourseTopic = course.englishTopic || course.topic;
         const englishSubtopicTitle = subtopic.englishTitle || subtopic.title;
         const englishLessonTitle = lesson.englishTitle || lesson.title;
@@ -455,30 +477,30 @@ exports.changeLessonVideo = async (req, res) => {
         console.log(`[YouTube] Searching for new video for lesson "${lesson.title}"...`);
         const youtubeResponse = await axios.get(youtubeApiUrl);
         const videos = youtubeResponse.data.items;
-        
-        const newVideo = videos.find(v => 
-            v.id.videoId && 
-            !lesson.videoHistory.some(vh => vh.videoUrl.includes(v.id.videoId)) && 
-            v.snippet.channelTitle && 
+
+        const newVideo = videos.find(v =>
+            v.id.videoId &&
+            !lesson.videoHistory.some(vh => vh.videoUrl.includes(v.id.videoId)) &&
+            v.snippet.channelTitle &&
             v.snippet.title.toLowerCase().includes(englishCourseTopic.toLowerCase())
-        ) || videos.find(v => 
-            v.id.videoId && 
+        ) || videos.find(v =>
+            v.id.videoId &&
             !lesson.videoHistory.some(vh => vh.videoUrl.includes(v.id.videoId)) &&
             v.snippet.channelTitle
         );
 
         if (newVideo) {
-            lesson.videoUrl = `https://www.youtube.com/embed/${newVideo.id.videoId}`; // Corrected YouTube embed URL format
-            lesson.videoChannelId = newVideo.snippet.channelId;
-            lesson.videoChannelTitle = newVideo.snippet.channelTitle;
+            videoUrl = `https://www.youtube.com/embed/${newVideo.id.videoId}`;
+            videoChannelId = newVideo.snippet.channelId;
+            videoChannelTitle = newVideo.snippet.channelTitle;
             lesson.videoChangeCount += 1;
-            lesson.videoHistory.push({ videoUrl: lesson.videoUrl, videoChannelId: lesson.videoChannelId, videoChannelTitle: newVideo.snippet.channelTitle });
+            lesson.videoHistory.push({ videoUrl: videoUrl, videoChannelId: videoChannelId, videoChannelTitle: newVideo.snippet.channelTitle });
             console.log(`[YouTube] Found new video ID: ${newVideo.id.videoId} for lesson "${lesson.title}".`);
         } else {
             console.warn('[YouTube] Could not find a new, unplayed video for this lesson.');
             return res.status(404).json({ msg: 'Could not find a new video.' });
         }
-        
+
         const updatedCourse = await Course.findOneAndUpdate(
             {
                 _id: courseId,
@@ -488,9 +510,9 @@ exports.changeLessonVideo = async (req, res) => {
             },
             {
                 $set: {
-                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoUrl': lesson.videoUrl,
-                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoChannelId': lesson.videoChannelId,
-                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoChannelTitle': lesson.videoChannelTitle,
+                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoUrl': videoUrl,
+                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoChannelId': videoChannelId,
+                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoChannelTitle': videoChannelTitle,
                     'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoHistory': lesson.videoHistory,
                     'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoChangeCount': lesson.videoChangeCount
                 }
@@ -512,7 +534,7 @@ exports.changeLessonVideo = async (req, res) => {
 
         const updatedSubtopic = updatedCourse.index.subtopics.id(subtopicId);
         const updatedLesson = updatedSubtopic.lessons.id(lessonId);
-        
+
         console.log('[DB] New video details saved.');
         res.json(updatedLesson);
 
@@ -534,10 +556,10 @@ exports.getChatbotResponse = async (req, res) => {
         }
 
         const prompt = `You are an AI Tutor named TANISI for a course on "${course.topic}". A student has asked: "${userQuery}". Provide a helpful and detailed explanation based on the course topic. If the question is outside the scope of "${course.topic}", gently decline to answer and guide the student back to the course material. The response must be in the ${course.languageName} language.`;
-        
+
         console.log('[AI] Generating chatbot response...');
         const rawText = await generateWithFallback(prompt);
-        const cleanedText = cleanAIText(rawText);
+        const cleanedText = cleanSingleLine(rawText);
         console.log('[AI] Chatbot response generated.');
 
         res.json({ response: cleanedText });
@@ -563,7 +585,7 @@ exports.saveCourseNotes = async (req, res) => {
         if (!course) {
             return res.status(404).json({ msg: 'Course not found' });
         }
-        
+
         console.log('[DB] Notes saved successfully.');
         res.json({ msg: 'Notes saved successfully.', notes: course.notes });
     } catch (error) {
@@ -602,7 +624,7 @@ exports.generateQuiz = async (req, res) => {
         console.log('[AI] Generating quiz...');
         const rawText = await generateWithFallback(prompt);
         const cleanedJsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-        
+
         let quiz;
         try {
             quiz = JSON.parse(cleanedJsonString);
@@ -627,7 +649,7 @@ exports.generateQuiz = async (req, res) => {
             console.error('[DB] Failed to find and update course for quiz save.');
             return res.status(404).json({ msg: 'Course not found during quiz save.' });
         }
-        
+
         console.log('[DB] Quiz saved to course.');
 
         res.json(quiz);
@@ -720,6 +742,10 @@ exports.exportCourseAsPdf = async (req, res) => {
 
         console.log('[PDF] Generating HTML content for PDF...');
         
+        const objectiveList = Array.isArray(course.objective) 
+            ? course.objective.map((obj, i) => `<li>${obj}</li>`).join('')
+            : `<li>${course.objective}</li>`;
+
         const htmlContent = `
             <html>
                 <head>
@@ -766,19 +792,19 @@ exports.exportCourseAsPdf = async (req, res) => {
                     <div class="page cover-page">
                         <h1>${course.topic}</h1>
                     </div>
-                    
+
                     <div class="page-break"></div>
 
                     <div class="page">
                         <h2>Objective</h2>
-                        <p>${course.objective.replace(/\n/g, '<br>')}</p>
+                        <ul>${objectiveList}</ul>
                     </div>
 
                     <div class="page-break"></div>
 
                     <div class="page">
                         <h2>Outcome</h2>
-                        <p>${course.outcome.replace(/\n/g, '<br>')}</p>
+                        <p>${(course.outcome || '').replace(/\n/g, '<br>')}</p>
                     </div>
 
                     <div class="page-break"></div>
@@ -794,7 +820,7 @@ exports.exportCourseAsPdf = async (req, res) => {
                             </div>
                         `).join('')}
                     </div>
-                    
+
                     ${course.index.subtopics.map(sub => sub.lessons.map(lesson => `
                         <div class="page-break"></div> <div class="page">
                             <h2>${lesson.title}</h2>
@@ -818,7 +844,7 @@ exports.exportCourseAsPdf = async (req, res) => {
         const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
         const page = await browser.newPage();
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-        
+
         console.log('[PDF] Generating PDF buffer...');
         const pdf = await page.pdf({
             format: 'A4',
@@ -864,6 +890,8 @@ exports.getVerificationData = async (req, res) => {
         const totalQuestions = course.quiz.length;
         const score = course.score || 0;
         const percentage = totalQuestions > 0 ? (score / totalQuestions) * 100 : 0;
+        
+        const objectiveString = Array.isArray(course.objective) ? course.objective.join('\n') : course.objective;
 
         const verificationData = {
             user: {
@@ -872,7 +900,7 @@ exports.getVerificationData = async (req, res) => {
             },
             course: {
                 topic: course.topic,
-                objective: course.objective,
+                objective: objectiveString,
                 outcome: course.outcome,
                 index: course.index,
                 startDate: course.createdAt,
