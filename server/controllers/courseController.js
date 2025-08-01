@@ -194,13 +194,13 @@ exports.generateIndex = async (req, res) => {
 
     if (!courseId || !topic || !objective || !outcome || !numSubtopics) return res.status(400).json({ msg: 'Missing details for index generation.' });
 
-    try {
+     try {
         const subtopicText = numSubtopics === 1 ? '1 subtopic' : `${numSubtopics} subtopics`;
-        // Prompt asks for englishTitle for subtopics and lessons
-        const prompt = `Generate a course index for "${topic}" (English: ${englishTopic || topic}) with exactly ${subtopicText}, where each subtopic has 3-5 lessons. IMPORTANT: Your response MUST be a valid JSON object. All text must be in ${languageName} (${nativeName}). Structure: { "subtopics": [{ "title": "...", "englishTitle": "...", "lessons": [{"title": "...", "englishTitle": "..."}, {"title": "...", "englishTitle": "..."}] }] }`;
+        // MODIFIED PROMPT: Clarified which language to use for each field.
+        const prompt = `Generate a course index for "${topic}" with exactly ${subtopicText}, where each subtopic has 3-5 lessons. IMPORTANT: Your response MUST be a valid JSON object. All 'title' fields must be in the ${languageName} (${nativeName}) language, and all 'englishTitle' fields must be in English. If the language is English, the 'title' and 'englishTitle' should be the same. Structure: { "subtopics": [{ "title": "...", "englishTitle": "...", "lessons": [{"title": "...", "englishTitle": "..."}, {"title": "...", "englishTitle": "..."}] }] }`;
 
         console.log('[AI] Generating course index with prompt:', prompt);
-        const rawText = await generateWithFallback(prompt, { type: "json_object" }); // Pass response_format
+        const rawText = await generateWithFallback(prompt, { type: "json_object" });
         const cleanedJsonString = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         let generatedIndex = JSON.parse(cleanedJsonString);
 

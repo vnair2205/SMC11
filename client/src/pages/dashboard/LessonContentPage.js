@@ -105,30 +105,6 @@ const ErrorMessage = styled.div`
     font-size: 1.2rem;
 `;
 
-const QuizButton = styled(Link)`
-  display: block;
-  width: fit-content;
-  margin: 2rem auto 0;
-  padding: 0.8rem 2rem;
-  background-color: ${({ theme }) => theme.colors.primary};
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1.1rem;
-  cursor: pointer;
-  text-decoration: none;
-  text-align: center;
-  transition: background-color 0.3s ease;
-
-  &:hover {
-    background-color: ${({ theme }) => theme.colors.primaryDark};
-  }
-  &:disabled {
-    background-color: #555;
-    cursor: not-allowed;
-  }
-`;
-
 const PageContainer = styled.div`
   padding: 2rem;
   text-align: ${({ dir }) => (dir === 'rtl' ? 'right' : 'left')};
@@ -229,8 +205,9 @@ const LessonContentPage = () => {
                 }
 
             } catch (err) {
-                console.error("[LessonContentPage] Error generating lesson content:", err);
-                setError(t(err.response?.data?.msgKey || 'errors.generic'));
+                console.error("[LessonContentPage] Error generating lesson content:", err.response?.data || err.message);
+                const errorMsg = t(err.response?.data?.msgKey || 'errors.generic');
+                setError(errorMsg);
             } finally {
                 setLoading(false);
                 isGeneratingRef.current = false;
@@ -285,14 +262,6 @@ const LessonContentPage = () => {
         }
     };
 
-    const handleQuizClick = () => {
-        if (lesson?.quiz) {
-            navigate(`/course/${courseId}/quiz`);
-        } else {
-            setQuizAvailabilityModal({ isOpen: true, message: t('errors.quiz_not_available') });
-        }
-    };
-
     if (loading || !parentCourse) {
         return <Preloader />;
     }
@@ -322,14 +291,7 @@ const LessonContentPage = () => {
                     <ModalButton primary onClick={handleChangeVideo}>{t('change_video_button', { defaultValue: 'Change' })}</ModalButton>
                 </ModalButtonContainer>
             </Modal>
-
-            <Modal isOpen={quizAvailabilityModal.isOpen} onClose={() => setQuizAvailabilityModal({ isOpen: false, message: '' })} title={t('quiz_not_available_title', { defaultValue: 'Quiz Not Available' })}>
-                <ModalText>{quizAvailabilityModal.message}</ModalText>
-                <ModalButtonContainer>
-                    <ModalButton primary onClick={() => setQuizAvailabilityModal({ isOpen: false, message: '' })}>{t('course_generation.ok_button')}</ModalButton>
-                </ModalButtonContainer>
-            </Modal>
-
+            
             <Title>
                 {/* NEW: Conditional rendering based on isEnglishCourse */}
                 {isEnglishCourse ?
@@ -383,10 +345,6 @@ const LessonContentPage = () => {
             </VideoControls>
 
             <ContentBody dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(lesson.content || t('course_generation.loading_text')) }} />
-
-            <QuizButton onClick={handleQuizClick} disabled={!lesson?.quiz}>
-                {t('quiz_button_text', { defaultValue: 'Take Quiz' })}
-            </QuizButton>
         </PageContainer>
     );
 };

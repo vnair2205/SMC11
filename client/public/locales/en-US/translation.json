@@ -145,7 +145,8 @@
     "video_language_notice_title": "Video Language Notice",
     "video_language_notice_message": "You've selected a language other than English. We will do our best to find relevant videos in your chosen language. However, if our AI cannot find a suitable video, we will provide a relevant video in English for the lesson instead.",
     "acknowledge_button": "Acknowledge",
-    "no_suitable_video_found_placeholder": "No suitable video found for this lesson. An English video will be provided instead if available, or a relevant image."
+    "no_suitable_video_found_placeholder": "No suitable video found for this lesson. An English video will be provided instead if available, or a relevant image.",
+     "course_not_completed_certificate": "You must complete the course and pass the quiz to get a certificate."
   },
   "course_generation": {
     "step1_title": "Spark Your Learning Journey",
@@ -177,6 +178,13 @@
     "suggestions_error": "Could not get suggestions at this time. Please try again.",
     "course_data_missing_error": "Could not find course data or lessons to navigate. Please try regenerating.",
     "back_button": "Back",
-    "next_button": "Next"
+    "next_button": "Next",
+     "course_completion_label": "Progress: {{completed}}/{{total}} ({{percentage}}%)",
+  "back_to_home_button_text": "Back to Home",
+  "export_course_to_pdf": "Export to PDF",
+  "take_quiz_button_text": "Take Quiz"
+    
+
+
   }
 }
