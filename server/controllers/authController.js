@@ -154,28 +154,31 @@ exports.loginUser = async (req, res) => {
 
         const payload = { user: { id: user.id } };
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' });
-        
+
         user.activeSession = { token, ...getSessionDetails(req) };
 
-        // --- THIS IS THE FIX ---
-        // Save the user with the new active session before sending the response
-        await user.save();
-        
+        // This is the crucial line that must be there.
+        await user.save(); 
+
         res.json({ token });
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ msgKey: 'errors.generic' });
     }
 };
-
+// **MISSING FUNCTION:** This is the function that your routes file is looking for.
 exports.forceLoginUser = async (req, res) => {
     const { email, password } = req.body;
     try {
         const user = await User.findOne({ email });
-        if (!user) return res.status(400).json({ msgKey: 'errors.invalid_credentials' });
+        if (!user) {
+            return res.status(400).json({ msgKey: 'errors.invalid_credentials' });
+        }
 
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ msgKey: 'errors.invalid_credentials' });
+        if (!isMatch) {
+            return res.status(400).json({ msgKey: 'errors.invalid_credentials' });
+        }
 
         const payload = { user: { id: user.id } };
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' });
