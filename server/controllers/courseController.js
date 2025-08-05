@@ -1,10 +1,12 @@
 // server/controllers/courseController.js
 const { google } = require('googleapis');
-const { generateWithFallback, getNextYoutubeKey, getNextPexelsKey, getOpenAIApiKey } = require('../utils/apiKeyManager');
+const { generateWithFallback, getNextYoutubeKey, getNextPexelsKey } = require('../utils/apiKeyManager');
 const Course = require('../models/Course');
+const Chat = require('../models/Chat');
 const axios = require('axios');
 const puppeteer = require('puppeteer');
 const mongoose = require('mongoose');
+
 
 const cleanAIText = (text) => {
     if (typeof text !== 'string') return '';
@@ -48,6 +50,42 @@ const fetchCourseThumbnail = async (topic) => {
         return null;
     }
 };
+
+const findBestVideo = (videos, { lessonTitle, subtopicTitle, courseTopic }) => {
+    if (!videos || videos.length === 0) {
+        return null;
+    }
+
+    const scoredVideos = videos
+        .map(video => {
+            if (!video.id?.videoId || !video.snippet?.title) {
+                return null;
+            }
+
+            const title = video.snippet.title.toLowerCase();
+            const description = (video.snippet.description || '').toLowerCase();
+            
+            if (title.includes('#shorts') || description.includes('#shorts')) {
+                return null;
+            }
+
+            let score = 0;
+            if (title.includes(lessonTitle.toLowerCase())) score += 10;
+            if (title.includes(subtopicTitle.toLowerCase())) score += 5;
+            if (title.includes(courseTopic.toLowerCase())) score += 2;
+
+            return { video, score };
+        })
+        .filter(Boolean);
+
+    if (scoredVideos.length === 0) {
+        return videos.find(v => v.id?.videoId && !v.snippet.title.toLowerCase().includes('#shorts')) || null;
+    }
+
+    scoredVideos.sort((a, b) => b.score - a.score);
+    return scoredVideos[0].video;
+};
+
 
 const callOpenAI = async (prompt, response_format = {}) => {
     const openaiApiKey = getOpenAIApiKey();
@@ -97,24 +135,27 @@ exports.generateObjective = async (req, res) => {
     const userId = req.user.id;
     if (!topic || !englishTopic) return res.status(400).json({ msg: 'Topic and English topic are required' });
     try {
-        const prompt = `Generate 4-5 learning objectives for a course on: "${topic}". The response must be in a numbered list format in the ${languageName} (${nativeName}) language.`;
-        console.log('[AI] Generating course objectives...');
-        const rawText = await generateWithFallback(prompt);
-        const cleanedObjectives = cleanAIText(rawText);
+        // Generate objectives in the native language
+        const nativePrompt = `Generate 4-5 learning objectives for a course on: "${topic}". The response must be in a numbered list format in the ${languageName} (${nativeName}) language.`;
+        console.log('[AI] Generating course objectives in native language...');
+        const nativeRawText = await generateWithFallback(nativePrompt);
+        const cleanedObjectives = cleanAIText(nativeRawText);
+
+        // Generate objectives in English
+        const englishPrompt = `Generate the exact same 4-5 learning objectives for a course on: "${englishTopic}", but in the English language. The response must be a numbered list.`;
+        console.log('[AI] Generating course objectives in English...');
+        const englishRawText = await generateWithFallback(englishPrompt);
+        const cleanedEnglishObjectives = cleanAIText(englishRawText);
 
         const thumbnailUrl = await fetchCourseThumbnail(englishTopic);
-        if (thumbnailUrl) {
-            console.log('[DB] Thumbnail fetched, adding to course data.');
-        } else {
-            console.log('[DB] No thumbnail found/fetched for this course.');
-        }
-
-        console.log('[DB] Creating new course...');
+        
+        console.log('[DB] Creating new course with bilingual objectives...');
         const newCourse = new Course({
             user: userId,
             topic,
             englishTopic,
             objective: cleanedObjectives,
+            englishObjective: cleanedEnglishObjectives, // Save English version
             language,
             languageName,
             nativeName,
@@ -125,12 +166,6 @@ exports.generateObjective = async (req, res) => {
         res.json({ objective: cleanedObjectives, courseId: newCourse._id });
     } catch (error) {
         console.error("--- ERROR IN generateObjective ---", error);
-        console.error("Timestamp:", new Date().toISOString());
-        console.error("Error Message:", error.message);
-        console.error("Error Stack:", error.stack);
-        if (error.name === 'ValidationError') {
-            console.error("Mongoose Validation Errors:", error.errors);
-        }
         res.status(500).json({ msgKey: "errors.generic" });
     }
 };
@@ -166,16 +201,29 @@ exports.refineSingleObjective = async (req, res) => {
 
 exports.generateOutcome = async (req, res) => {
     console.log('[API] /generate-outcome called');
-    const { courseId, topic, objective, languageName, nativeName } = req.body;
+    const { courseId, topic, englishTopic, objective, languageName, nativeName } = req.body;
     if (!courseId || !topic || !objective) return res.status(400).json({ msg: 'ID, topic, and objective are required' });
     try {
         const objectivesString = objective.join('; ');
-        const prompt = `Based on topic "${topic}" and objectives "${objectivesString}", generate 4-5 learning outcomes. The response must be in a numbered list format in the ${languageName} (${nativeName}) language.`;
-        console.log('[AI] Generating course outcomes...');
-        const rawText = await generateWithFallback(prompt);
-        const cleanedText = cleanAIText(rawText).join('\n');
-        console.log('[DB] Updating course with outcomes...');
-        const course = await Course.findByIdAndUpdate(courseId, { outcome: cleanedText }, { new: true });
+
+        // Generate outcomes in the native language
+        const nativePrompt = `Based on topic "${topic}" and objectives "${objectivesString}", generate 4-5 learning outcomes. The response must be in a numbered list format in the ${languageName} (${nativeName}) language.`;
+        console.log('[AI] Generating course outcomes in native language...');
+        const nativeRawText = await generateWithFallback(nativePrompt);
+        const cleanedNativeText = cleanAIText(nativeRawText).join('\n');
+
+        // Generate outcomes in English
+        const englishPrompt = `Based on topic "${englishTopic}" and objectives "${objectivesString}", generate the exact same 4-5 learning outcomes, but in the English language. The response must be a numbered list.`;
+        console.log('[AI] Generating course outcomes in English...');
+        const englishRawText = await generateWithFallback(englishPrompt);
+        const cleanedEnglishText = cleanAIText(englishRawText).join('\n');
+        
+        console.log('[DB] Updating course with bilingual outcomes...');
+        const course = await Course.findByIdAndUpdate(courseId, { 
+            outcome: cleanedNativeText,
+            englishOutcome: cleanedEnglishText // Save English version
+        }, { new: true });
+
         if (!course) return res.status(404).json({ msg: 'Course not found' });
         console.log('[DB] Course outcomes saved.');
         res.json({ outcome: course.outcome });
@@ -332,35 +380,34 @@ exports.generateLessonContent = async (req, res) => {
 
         if (shouldGenerateNewContent) {
             try {
-                const apiKey = getNextYoutubeKey();
-                const englishCourseTopic = course.englishTopic || course.topic;
-                const englishSubtopicTitle = subtopic.englishTitle || subtopic.title;
-                const englishLessonTitle = lesson.englishTitle || lesson.title;
+               const apiKey = getNextYoutubeKey();
+            const englishCourseTopic = course.englishTopic || course.topic;
+            const englishSubtopicTitle = subtopic.englishTitle || subtopic.title;
+            const englishLessonTitle = lesson.englishTitle || lesson.title;
 
                 const searchQuery = encodeURIComponent(`${englishCourseTopic} ${englishSubtopicTitle} ${englishLessonTitle} tutorial`);
-                const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${searchQuery}&type=video&videoEmbeddable=true&maxResults=5&key=${apiKey}&relevanceLanguage=en`;
+            const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${searchQuery}&type=video&videoEmbeddable=true&maxResults=10&key=${apiKey}&relevanceLanguage=en&videoDuration=medium`;
                 
-                console.log(`[YouTube] Searching for video with query: "${searchQuery}"`);
-                const youtubeResponse = await axios.get(youtubeApiUrl);
-                
-                const videos = youtubeResponse.data.items;
-                const relevantVideo = videos.find(v =>
-                    v.id.videoId &&
-                    v.snippet.title.toLowerCase().includes(englishCourseTopic.toLowerCase())
-                ) || videos[0];
-
-                if (relevantVideo && relevantVideo.id && relevantVideo.id.videoId) {
-                    videoUrl = `https://www.youtube.com/embed/${relevantVideo.id.videoId}`;
-                    videoChannelId = relevantVideo.snippet.channelId;
-                    videoChannelTitle = relevantVideo.snippet.channelTitle;
-                    console.log(`[YouTube] Found video ID: ${relevantVideo.id.videoId}`);
-                } else {
-                    console.log('[YouTube] No suitable video found.');
-                }
-            } catch (youtubeError) {
-                console.error("[Error] YouTube API Error (generateLessonContent):", youtubeError.response ? youtubeError.response.data : youtubeError.message);
+                  console.log(`[YouTube] Searching with improved query: "${searchQuery}"`);
+            const youtubeResponse = await axios.get(youtubeApiUrl);
+            
+            const bestVideo = findBestVideo(youtubeResponse.data.items, {
+                lessonTitle: englishLessonTitle,
+                subtopicTitle: englishSubtopicTitle,
+                courseTopic: englishCourseTopic
+            });
+            
+            if (bestVideo) {
+                videoUrl = `https://www.youtube.com/embed/${bestVideo.id.videoId}`;
+                videoChannelId = bestVideo.snippet.channelId;
+                videoChannelTitle = bestVideo.snippet.channelTitle;
+                console.log(`[YouTube] Found best video ID: ${bestVideo.id.videoId}`);
+            } else {
+                console.log('[YouTube] No suitable video found after filtering.');
             }
-
+        } catch (youtubeError) {
+            console.error("[Error] YouTube API Error (generateLessonContent):", youtubeError.response ? youtubeError.response.data : youtubeError.message);
+        }
             const prompt = `
             You are an expert tutor designing a self-paced course. For the course "${course.topic}", in the subtopic "${subtopic.title}", generate detailed and engaging lesson content for the topic "${lesson.title}".
 
@@ -402,6 +449,8 @@ exports.generateLessonContent = async (req, res) => {
             lesson.videoHistory = [{ videoUrl: videoUrl, videoChannelId: videoChannelId, videoChannelTitle: videoChannelTitle }];
             lesson.videoChangeCount = 0;
             lesson.isCompleted = true;
+            await course.save();
+              res.json(lesson);
 
         } else if (!lesson.isCompleted) {
             lesson.isCompleted = true;
@@ -454,109 +503,83 @@ exports.generateLessonContent = async (req, res) => {
 };
 
 exports.changeLessonVideo = async (req, res) => {
-    console.log('[API] /lesson/change-video called');
     const { courseId, subtopicId, lessonId } = req.body;
     const userId = req.user.id;
-
     try {
         const course = await Course.findOne({ _id: courseId, user: userId });
         if (!course) return res.status(404).json({ msg: 'Course not found' });
-
         const subtopic = course.index.subtopics.id(subtopicId);
         if (!subtopic) return res.status(404).json({ msg: 'Subtopic not found' });
-
         const lesson = subtopic.lessons.id(lessonId);
         if (!lesson) return res.status(404).json({ msg: 'Lesson not found' });
-
         if (lesson.videoChangeCount >= 3) {
-            return res.status(400).json({ msg: 'Video can only be changed 3 times per lesson.' });
+            return res.status(400).json({ msgKey: 'errors.video_change_limit' });
         }
-
-        if (lesson.videoUrl && !lesson.videoHistory.some(v => v.videoUrl === lesson.videoUrl)) {
-            lesson.videoHistory.push({ videoUrl: lesson.videoUrl, videoChannelId: lesson.videoChannelId, videoChannelTitle: lesson.videoChannelTitle });
-        }
-
+        
         const apiKey = getNextYoutubeKey();
         const englishCourseTopic = course.englishTopic || course.topic;
         const englishSubtopicTitle = subtopic.englishTitle || subtopic.title;
         const englishLessonTitle = lesson.englishTitle || lesson.title;
 
+        // --- THIS IS THE UPDATED, MORE SPECIFIC SEARCH QUERY ---
         const searchQuery = encodeURIComponent(`${englishCourseTopic} ${englishSubtopicTitle} ${englishLessonTitle} tutorial`);
-        const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${searchQuery}&type=video&videoEmbeddable=true&maxResults=5&key=${apiKey}&relevanceLanguage=en`;
+        const youtubeApiUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${searchQuery}&type=video&videoEmbeddable=true&maxResults=10&key=${apiKey}&relevanceLanguage=en&videoDuration=medium`;
 
-        console.log(`[YouTube] Searching for new video for lesson "${lesson.title}"...`);
+        console.log(`[YouTube] Searching for new video with query: "${searchQuery}"...`);
         const youtubeResponse = await axios.get(youtubeApiUrl);
-        const videos = youtubeResponse.data.items;
+        
+        const existingVideoIds = lesson.videoHistory.map(v => v.videoUrl.split('/embed/')[1]);
+        const newVideos = youtubeResponse.data.items.filter(v => !existingVideoIds.includes(v.id.videoId));
+        
+        const bestVideo = findBestVideo(newVideos, {
+            lessonTitle: englishLessonTitle,
+            subtopicTitle: englishSubtopicTitle,
+            courseTopic: englishCourseTopic
+        });
 
-        const newVideo = videos.find(v =>
-            v.id.videoId &&
-            !lesson.videoHistory.some(vh => vh.videoUrl.includes(v.id.videoId)) &&
-            v.snippet.channelTitle &&
-            v.snippet.title.toLowerCase().includes(englishCourseTopic.toLowerCase())
-        ) || videos.find(v =>
-            v.id.videoId &&
-            !lesson.videoHistory.some(vh => vh.videoUrl.includes(v.id.videoId)) &&
-            v.snippet.channelTitle
-        );
-
-        if (newVideo) {
-            lesson.videoUrl = `https://www.youtube.com/embed/${newVideo.id.videoId}`;
-            lesson.videoChannelId = newVideo.snippet.channelId;
-            lesson.videoChannelTitle = newVideo.snippet.channelTitle;
+        if (bestVideo) {
+            lesson.videoUrl = `https://www.youtube.com/embed/${bestVideo.id.videoId}`;
+            lesson.videoChannelId = bestVideo.snippet.channelId;
+            lesson.videoChannelTitle = bestVideo.snippet.channelTitle;
             lesson.videoChangeCount += 1;
-            lesson.videoHistory.push({ videoUrl: lesson.videoUrl, videoChannelId: lesson.videoChannelId, videoChannelTitle: newVideo.snippet.channelTitle });
-            console.log(`[YouTube] Found new video ID: ${newVideo.id.videoId} for lesson "${lesson.title}".`);
+            lesson.videoHistory.push({ videoUrl: lesson.videoUrl, videoChannelId: lesson.videoChannelId, videoChannelTitle: bestVideo.snippet.channelTitle });
+            
+            await course.save();
+            console.log(`[YouTube] Found new video ID: ${bestVideo.id.videoId}`);
+            res.json(lesson);
         } else {
-            console.warn('[YouTube] Could not find a new, unplayed video for this lesson.');
-            return res.status(404).json({ msg: 'Could not find a new video.' });
+            console.warn('[YouTube] Could not find a new, unplayed video.');
+            return res.status(404).json({ msgKey: 'errors.no_new_video_found' });
         }
-
-        const updatedCourse = await Course.findOneAndUpdate(
-            {
-                _id: courseId,
-                user: userId,
-                'index.subtopics._id': subtopicId,
-                'index.subtopics.lessons._id': lessonId
-            },
-            {
-                $set: {
-                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoUrl': lesson.videoUrl,
-                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoChannelId': lesson.videoChannelId,
-                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoChannelTitle': lesson.videoChannelTitle,
-                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoHistory': lesson.videoHistory,
-                    'index.subtopics.$[subtopicElem].lessons.$[lessonElem].videoChangeCount': lesson.videoChangeCount
-                }
-            },
-            {
-                new: true,
-                arrayFilters: [
-                    { 'subtopicElem._id': subtopicId },
-                    { 'lessonElem._id': lessonId }
-                ],
-                runValidators: true
-            }
-        );
-
-        if (!updatedCourse) {
-            console.error('[DB] Failed to find and update specific lesson subdocument for video change.');
-            return res.status(404).json({ msg: 'Course or lesson not found during video change.' });
-        }
-
-        const updatedSubtopic = updatedCourse.index.subtopics.id(subtopicId);
-        const updatedLesson = updatedSubtopic.lessons.id(lessonId);
-
-        console.log('[DB] New video details saved.');
-        res.json(updatedLesson);
-
     } catch (error) {
         console.error("Error changing lesson video:", error.message);
         res.status(500).json({ msgKey: "errors.generic" });
     }
 };
 
+exports.getChatHistory = async (req, res) => {
+    console.log('[API] /chat/:courseId called');
+    try {
+        const chat = await Chat.findOne({
+            course: req.params.courseId,
+            user: req.user.id
+        });
+
+        if (!chat) {
+            console.log('[DB] No chat history found for this course and user.');
+            return res.json([]); // Return empty array if no history
+        }
+
+        console.log('[DB] Chat history retrieved successfully.');
+        res.json(chat.messages);
+    } catch (error) {
+        console.error("Error fetching chat history:", error.message);
+        res.status(500).json({ msgKey: "errors.generic" });
+    }
+};
 
 exports.getChatbotResponse = async (req, res) => {
-    console.log('[API] /chatbot called');
+    console.log('[API] /chatbot called (with save logic)');
     const { courseId, userQuery, lessonContent, chatHistory } = req.body;
     const userId = req.user.id;
 
@@ -566,15 +589,14 @@ exports.getChatbotResponse = async (req, res) => {
             return res.status(404).json({ msg: 'Course not found' });
         }
 
+        // --- Start of AI Prompt Generation (same as before) ---
         let fullPrompt = `You are an AI Tutor named TANISI for a course on "${course.topic}". A student has asked: "${userQuery}".`;
         
-        // Add chat history to the prompt for context
         if (chatHistory && chatHistory.length > 0) {
             const formattedHistory = chatHistory.map(msg => `${msg.isUser ? 'Student' : 'TANISI'}: ${msg.text}`).join('\n');
             fullPrompt += `\n\nHere is the previous conversation for context:\n<ChatHistory>\n${formattedHistory}\n</ChatHistory>`;
         }
         
-        // Add lesson content to the prompt for contextual awareness
         if (lessonContent) {
             fullPrompt += `\n\nThe current lesson content is as follows:\n<LessonContent>\n${lessonContent}\n</LessonContent>`;
         }
@@ -584,6 +606,21 @@ exports.getChatbotResponse = async (req, res) => {
         console.log('[AI] Generating chatbot response with full context...');
         const rawText = await generateWithFallback(fullPrompt);
         console.log('[AI] Chatbot response generated.');
+        // --- End of AI Prompt Generation ---
+
+        // --- New Database Save Logic ---
+        console.log('[DB] Saving chat messages to database...');
+        const userMessage = { text: userQuery, isUser: true, timestamp: new Date() };
+        const aiMessage = { text: rawText, isUser: false, timestamp: new Date() };
+
+        // Find the chat document or create a new one if it doesn't exist
+        await Chat.findOneAndUpdate(
+            { course: courseId, user: userId },
+            { $push: { messages: { $each: [userMessage, aiMessage] } } },
+            { upsert: true, new: true }
+        );
+        console.log('[DB] Chat messages saved successfully.');
+        // --- End of New Database Save Logic ---
 
         res.json({ response: rawText });
     } catch (error) {
@@ -720,7 +757,9 @@ exports.completeQuiz = async (req, res) => {
 exports.getUsersCourses = async (req, res) => {
     console.log('[API] /courses called');
     const userId = req.user.id;
-    const { page = 1, limit = 20, search = '', sortBy = 'newest', status = 'all' } = req.query;
+    // --- THIS IS THE FIX ---
+    // Add 'certified' to the list of variables extracted from req.query
+    const { page = 1, limit = 20, search = '', sortBy = 'newest', status = 'all', certified } = req.query;
 
     const query = { user: userId };
     const options = {
@@ -733,7 +772,15 @@ exports.getUsersCourses = async (req, res) => {
         query.topic = { $regex: search, $options: 'i' };
     }
 
-    if (status !== 'all') {
+    if (certified === 'true') {
+        query.status = 'Completed';
+        query.$expr = {
+            $gte: [
+                { $divide: ["$score", { $size: "$quiz" }] },
+                0.60
+            ]
+        };
+    } else if (status !== 'all') {
         query.status = status;
     }
 
@@ -914,7 +961,21 @@ exports.getVerificationData = async (req, res) => {
         const score = course.score || 0;
         const percentage = totalQuestions > 0 ? (score / totalQuestions) * 100 : 0;
         
-        const objectiveString = Array.isArray(course.objective) ? course.objective.join('\n') : course.objective;
+        // Use English versions with fallbacks for older courses
+        const objectiveString = Array.isArray(course.englishObjective) && course.englishObjective.length > 0 
+            ? course.englishObjective.join('\n') 
+            : (Array.isArray(course.objective) ? course.objective.join('\n') : course.objective);
+
+        const englishIndex = {
+            subtopics: course.index.subtopics.map(sub => ({
+                ...sub.toObject(),
+                title: sub.englishTitle || sub.title,
+                lessons: sub.lessons.map(lesson => ({
+                    ...lesson.toObject(),
+                    title: lesson.englishTitle || lesson.title
+                }))
+            }))
+        };
 
         const verificationData = {
             user: {
@@ -922,13 +983,13 @@ exports.getVerificationData = async (req, res) => {
                 lastName: course.user.lastName,
             },
             course: {
-                topic: course.topic,
+                topic: course.englishTopic || course.topic,
                 objective: objectiveString,
-                outcome: course.outcome,
-                index: course.index,
+                outcome: course.englishOutcome || course.outcome,
+                index: englishIndex, // Use the processed English index
                 startDate: course.createdAt,
                 completionDate: course.completionDate || new Date(),
-                percentageScored: percentage
+                percentageScored: percentage.toFixed(2)
             }
         };
 

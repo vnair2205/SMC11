@@ -33,7 +33,7 @@
     "pre_generated_courses": "الدورات المُعدَّة مسبقًا",
     "my_courses": "دوراتي",
     "my_certificates": "شهاداتي",
-    "my_study_groups": "مجموعاتي الدراسية",
+    "my_study_groups": "مجموعات الدراسة والمحادثات",
     "help_support": "المساعدة والدعم",
     "seek_connect": "Seek Connect",
     "events": "الفعاليات والأخبار",
@@ -102,7 +102,7 @@
   "search_chat_placeholder": "البحث في الدردشة...",
   "chatbot_course_completed_message": "مدرس تانسي بالذكاء الاصطناعي لم يعد متاحًا للاستفسارات الجديدة في هذه الدورة لأنك قد أكملتها. لا يزال بإمكانك عرض محادثاتك السابقة.",
   "chatbot_disabled_input_placeholder": "الدردشة معطلة للدورات المكتملة.",
-  "chatbot_active_input_placeholder": "اطرح سؤالًا...",
+  "chatbot_active_input_placeholder":"ابحث في محادثاتك السابقة..",
   "errors": {
     "generic": "حدث خطأ. يرجى المحاولة مرة أخرى.",
     "first_name_required": "الاسم الأول مطلوب.",
@@ -186,5 +186,26 @@
     "take_quiz_button_text": "خوض الاختبار",
     "refine_topic_modal_title": "اختر أفضل موضوع",
     "refine_topic_modal_message": "لقد أنشأنا بعض المواضيع البديلة بناءً على مدخلاتك. يرجى اختيار الأنسب لدورتك لضمان تجربة تعليمية عالية الجودة."
+  },
+    "quiz": {
+    "instruction_modal_title": "تعليمات الاختبار",
+    "instruction_passing_score": "يجب أن تحصل على 60% أو أكثر لكسب شهادة.",
+    "instruction_how_to": "للإجابة على سؤال، حدد خيارًا واضغط على 'السؤال التالي' للمتابعة.",
+    "instruction_feedback": "بعد تحديد الإجابة، سيتم تمييز الخيارات الصحيحة باللون الأخضر والخيارات الخاطئة باللون الأحمر.",
+    "start_quiz_button": "ابدأ الاختبار"
+  },
+   "score_card": {
+    "title_pass": "تهانينا، لقد نجحت!",
+    "title_fail": "استمر في التدريب!",
+    "subtitle_pass": "لديك فهم قوي للموضوع وقد حصلت على شهادتك.",
+    "subtitle_fail": "لا تقلق! يمكنك مراجعة محتوى الدورة وإعادة الاختبار في أي وقت.",
+    "score_text": "لقد أحرزت",
+    "get_certificate_button": "احصل على الشهادة",
+    "back_to_course_button": "العودة إلى الدورة"
+  },
+    "my_certificates_page": {
+    "title": "شهاداتي",
+    "no_certificates": "لم تحصل على أي شهادات بعد. أكمل دورة واجتز الاختبار لمشاهدتها هنا!",
+    "view_certificate_button": "عرض الشهادة"
   }
 }

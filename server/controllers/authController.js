@@ -94,7 +94,6 @@ exports.verifyPhoneOtp = async (req, res) => {
         user.isPhoneVerified = true; 
         await user.save();
         
-        // Call the new helper function to generate and send email OTP
         await generateAndSendEmailOtp(user);
 
         res.status(200).json({ msg: 'Phone number verified. Proceeding to email verification.', email: user.email });
@@ -110,14 +109,13 @@ exports.verifyEmailOtp = async (req, res) => {
         const user = await User.findOne({ email });
         if (!user) return res.status(404).json({ msgKey: 'errors.user_not_found' });
         
-        // Actual verification logic
         if (user.emailOtp !== otp || user.emailOtpExpires < Date.now()) {
             return res.status(400).json({ msgKey: 'errors.otp_invalid_or_expired' });
         }
         
         user.isEmailVerified = true; 
-        user.emailOtp = undefined; // Clear OTP after successful verification
-        user.emailOtpExpires = undefined; // Clear OTP expiry
+        user.emailOtp = undefined;
+        user.emailOtpExpires = undefined;
         await user.save();
 
         const payload = { user: { id: user.id } };
@@ -140,8 +138,6 @@ exports.loginUser = async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ msgKey: 'errors.invalid_credentials' });
 
-        // Check for active session conflict
-        // FIX: Add a check to ensure user.activeSession exists before accessing its properties
         if (user.activeSession) {
             try {
                 jwt.verify(user.activeSession.token, process.env.JWT_SECRET);
@@ -158,7 +154,11 @@ exports.loginUser = async (req, res) => {
 
         const payload = { user: { id: user.id } };
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' });
+        
         user.activeSession = { token, ...getSessionDetails(req) };
+
+        // --- THIS IS THE FIX ---
+        // Save the user with the new active session before sending the response
         await user.save();
         
         res.json({ token });
@@ -169,7 +169,7 @@ exports.loginUser = async (req, res) => {
 };
 
 exports.forceLoginUser = async (req, res) => {
-    const { email, password } = req.body; // Assuming email/password are sent for re-auth
+    const { email, password } = req.body;
     try {
         const user = await User.findOne({ email });
         if (!user) return res.status(400).json({ msgKey: 'errors.invalid_credentials' });
@@ -177,7 +177,6 @@ exports.forceLoginUser = async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ msgKey: 'errors.invalid_credentials' });
 
-        // Clear any existing session and create a new one
         const payload = { user: { id: user.id } };
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' });
         user.activeSession = { token, ...getSessionDetails(req) };
@@ -192,13 +191,12 @@ exports.forceLoginUser = async (req, res) => {
 
 exports.logoutUser = async (req, res) => {
     try {
-        // req.user is populated by the auth middleware
         if (!req.user) {
             return res.status(401).json({ msg: 'User not authenticated for logout.' });
         }
         const user = await User.findById(req.user.id);
         if (user) {
-            user.activeSession = undefined; // Clear the active session
+            user.activeSession = undefined;
             await user.save();
         }
         res.status(200).json({ msg: 'Logged out successfully.' });
@@ -259,12 +257,12 @@ exports.updateAndResendPhoneOtp = async (req, res) => {
         if (!user) return res.status(404).json({ msgKey: 'errors.user_not_found' });
 
         const existingUserWithNewPhone = await User.findOne({ phoneNumber: newPhoneNumber });
-        if (existingUserWithNewPhone && existingUserWithNewPhone._id.toString() !== user._id.toString()) { // Check ID to allow update if it's the same user
+        if (existingUserWithNewPhone && existingUserWithNewPhone._id.toString() !== user._id.toString()) {
             return res.status(400).json({ msgKey: 'errors.phone_exists' });
         }
 
         user.phoneNumber = newPhoneNumber;
-        user.isPhoneVerified = false; // Reset verification status for the new number
+        user.isPhoneVerified = false;
         await user.save();
 
         const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -289,7 +287,6 @@ exports.resendEmailOtp = async (req, res) => {
         const user = await User.findOne({ email });
         if (!user) return res.status(404).json({ msgKey: 'errors.user_not_found' });
 
-        // Generate and send a new OTP to the user's current email
         await generateAndSendEmailOtp(user);
         res.status(200).json({ msg: 'email_otp_resent_success' });
     } catch (err) {
@@ -310,10 +307,9 @@ exports.updateAndResendEmailOtp = async (req, res) => {
         }
 
         user.email = newEmail;
-        user.isEmailVerified = false; // Reset verification status for the new email
+        user.isEmailVerified = false;
         await user.save();
 
-        // Generate and send a new OTP to the new email
         await generateAndSendEmailOtp(user);
         res.status(200).json({ msg: 'email_update_success' });
     } catch (err) {

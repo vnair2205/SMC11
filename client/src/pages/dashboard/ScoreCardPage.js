@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import axios from 'axios';
-import { FiAward, FiHome, FiArrowRight } from 'react-icons/fi';
+import { useTranslation } from 'react-i18next'; // Import useTranslation
+import { FiAward, FiHome, FiArrowRight, FiThumbsUp, FiRepeat } from 'react-icons/fi'; // Added new icons
 
 const ScorePageContainer = styled.div`
   display: flex;
@@ -21,13 +22,13 @@ const ScoreCard = styled.div`
   flex-direction: column;
   align-items: center;
   text-align: center;
-  border: 1px solid ${({ theme }) => theme.colors.primary};
+  border: 1px solid ${({ theme, passed }) => (passed ? theme.colors.primary : '#a0a0a0')};
 `;
 
 const Title = styled.h1`
   font-size: 2rem;
   margin-bottom: 1rem;
-  color: ${({ theme }) => theme.colors.primary};
+  color: ${({ theme, passed }) => (passed ? theme.colors.primary : 'white')};
 `;
 
 const ScoreText = styled.p`
@@ -44,6 +45,7 @@ const ScoreText = styled.p`
 
 const MessageText = styled.p`
   color: #a0a0a0;
+  line-height: 1.6;
 `;
 
 const ButtonGroup = styled.div`
@@ -73,15 +75,10 @@ const ScoreCardPage = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { courseId } = useParams();
+    const { t } = useTranslation(); // Initialize translation hook
     const { score, total } = location.state || { score: 0, total: 0 };
     const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
-
-    let message = "Good effort! Keep practicing to improve your score.";
-    if (percentage >= 80) {
-        message = "Excellent work! You've mastered the material.";
-    } else if (percentage >= 60) {
-        message = "Great job! You have a solid understanding of the topic.";
-    }
+    const hasPassed = percentage >= 60;
 
     const updateQuizCompletion = async () => {
         const token = localStorage.getItem('token');
@@ -103,9 +100,10 @@ const ScoreCardPage = () => {
     };
 
     useEffect(() => {
-        if (score !== undefined && total !== undefined && (score !== 0 || total !== 0)) {
+        if (score !== undefined && total !== undefined) {
             updateQuizCompletion();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [score, total, courseId]);
 
     const handleGetCertificate = () => {
@@ -113,28 +111,35 @@ const ScoreCardPage = () => {
     };
 
     const handleBackToCoursePage = () => {
-        // Pass refreshCourseData: true to force CourseViewPage to fetch latest data
-        navigate(`/course/${courseId}`, { state: { showQuizCompletionMessage: percentage >= 60, refreshCourseData: true } });
+        navigate(`/course/${courseId}`, { state: { showQuizCompletionMessage: hasPassed, refreshCourseData: true } });
     };
 
     return (
-        <ScorePageContainer> {/* Corrected: Changed from PageContainer to ScorePageContainer */}
-            <ScoreCard>
-                <FiAward size={50} color="#03d9c5" />
-                <Title>Quiz Complete!</Title>
+        <ScorePageContainer>
+            <ScoreCard passed={hasPassed}>
+                {hasPassed ? <FiAward size={50} color="#03d9c5" /> : <FiRepeat size={50} color="#a0a0a0" />}
+                
+                <Title passed={hasPassed}>
+                    {t(hasPassed ? 'score_card.title_pass' : 'score_card.title_fail')}
+                </Title>
+                
                 <ScoreText>
-                    You scored<br/>
+                    {t('score_card.score_text')}<br/>
                     <span>{score} / {total}</span>
                 </ScoreText>
-                <MessageText>{message}</MessageText>
+                
+                <MessageText>
+                    {t(hasPassed ? 'score_card.subtitle_pass' : 'score_card.subtitle_fail')}
+                </MessageText>
+                
                 <ButtonGroup>
-                    {percentage >= 60 && (
+                    {hasPassed && (
                         <StyledButton primary onClick={handleGetCertificate}>
-                            Get Certificate <FiArrowRight />
+                            {t('score_card.get_certificate_button')} <FiArrowRight />
                         </StyledButton>
                     )}
                     <StyledButton onClick={handleBackToCoursePage}>
-                        <FiHome /> Back to Course
+                        <FiHome /> {t('score_card.back_to_course_button')}
                     </StyledButton>
                 </ButtonGroup>
             </ScoreCard>

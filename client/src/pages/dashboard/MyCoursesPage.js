@@ -3,8 +3,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { format } from 'date-fns'; // CORRECTED: Changed from require() to import {} from ''
-import { useTranslation } from 'react-i18next'; // CORRECTED: Changed from require() to import {} from ''
+import { format } from 'date-fns';
+import { useTranslation } from 'react-i18next';
 import { FiSearch, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import Preloader from '../../components/common/Preloader';
 
@@ -264,7 +264,7 @@ const MyCoursesPage = () => {
     setCurrentPage(1);
   };
 
-  const handleSortChange = (e) => { // Correctly named function
+  const handleSortChange = (e) => {
     setSortBy(e.target.value);
     setCurrentPage(1);
   };
@@ -275,14 +275,21 @@ const MyCoursesPage = () => {
   };
 
   const handleViewCourse = (course) => {
+    // --- THIS IS THE FIX ---
+    // 1. Get the ID of the first subtopic
+    const firstSubtopicId = course.index?.subtopics?.[0]?._id;
+    // 2. Get the ID of the first lesson
     const firstLessonId = course.index?.subtopics?.[0]?.lessons?.[0]?._id;
     
     console.log('--- Attempting direct navigation to lesson content ---');
     console.log('Course Object:', course);
+    console.log('First Subtopic ID:', firstSubtopicId);
     console.log('First Lesson ID:', firstLessonId);
 
-    if (firstLessonId) {
-        navigate(`/course/${course._id}/lesson/${firstLessonId}`);
+    // 3. Check that both IDs exist before navigating
+    if (firstSubtopicId && firstLessonId) {
+        // 4. Build the correct URL with all required parameters
+        navigate(`/course/${course._id}/lesson/${firstSubtopicId}/${firstLessonId}`);
     } else {
         alert("This course does not have any lessons yet!");
     }
@@ -319,7 +326,6 @@ const MyCoursesPage = () => {
             <option value="Completed">{t('sidebar.completed_status')}</option>
           </Select>
         </SearchFilterContainer>
-        {/* Placeholder for other header elements if any */}
       </HeaderContainer>
 
       {error && <NoCoursesMessage style={{color: 'red'}}>{error}</NoCoursesMessage>}

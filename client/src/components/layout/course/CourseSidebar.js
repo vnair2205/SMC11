@@ -202,11 +202,13 @@ const LessonLink = styled(NavLink)`
   `}
 `;
 
+
 const CourseSidebar = ({ course, isRTL }) => {
     const navigate = useNavigate();
     const [downloadLoading, setDownloadLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
     const [errorModal, setErrorModal] = useState({ isOpen: false, message: '' });
+    const [isQuizModalOpen, setIsQuizModalOpen] = useState(false); // NEW: State for the quiz instruction modal
     const { t } = useTranslation();
 
     const totalLessons = course?.index?.subtopics.reduce((acc, sub) => acc + sub.lessons.length, 0) || 0;
@@ -252,10 +254,15 @@ const CourseSidebar = ({ course, isRTL }) => {
         }
         navigate(`/course/${course._id}/certificate`);
     };
-
     const handleTakeQuiz = () => {
+         setIsQuizModalOpen(true);
+    };
+
+const startQuiz = () => {
+        setIsQuizModalOpen(false);
         navigate(`/course/${course._id}/quiz`);
     };
+    
 
     return (
         <>
@@ -265,6 +272,25 @@ const CourseSidebar = ({ course, isRTL }) => {
                     <ModalButton primary onClick={() => setErrorModal({ isOpen: false, message: '' })}>{t('course_generation.ok_button')}</ModalButton>
                 </ModalButtonContainer>
             </Modal>
+            {/* --- NEW QUIZ INSTRUCTION MODAL --- */}
+            <Modal
+                isOpen={isQuizModalOpen}
+                onClose={() => setIsQuizModalOpen(false)}
+                title={t('quiz.instruction_modal_title', { defaultValue: 'Quiz Instructions' })}
+            >
+                <ModalText style={{ textAlign: 'left', lineHeight: 1.8 }}>
+                    <ul style={{ paddingLeft: '20px' }}>
+                        <li>{t('quiz.instruction_passing_score', { defaultValue: 'You must score 60% or more to earn a certificate.' })}</li>
+                        <li>{t('quiz.instruction_how_to', { defaultValue: "Select an answer and click 'Next Question' to proceed." })}</li>
+                        <li>{t('quiz.instruction_feedback', { defaultValue: 'Correct answers will be highlighted in green and incorrect ones in red.' })}</li>
+                    </ul>
+                </ModalText>
+                <ModalButtonContainer>
+                    <ModalButton onClick={() => setIsQuizModalOpen(false)}>{t('errors.cancel_button', { defaultValue: 'Cancel' })}</ModalButton>
+                    <ModalButton primary onClick={startQuiz}>{t('quiz.start_quiz_button', { defaultValue: 'Start Quiz' })}</ModalButton>
+                </ModalButtonContainer>
+            </Modal>
+
 
             <SidebarContainer $isRTL={isRTL}>
                 <SidebarHeader>

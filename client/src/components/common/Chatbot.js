@@ -135,21 +135,24 @@ const SideModal = styled.div`
   display: flex;
   flex-direction: column;
   
+  /* --- CHANGE #1: MODAL WIDTH --- */
+  width: 950px;
+  
   ${({ $isOpen, $isRTL }) =>
     $isRTL
       ? css`
           right: unset;
-          left: ${$isOpen ? '0px' : '-360px'};
+          left: ${$isOpen ? '0px' : '-950px'}; /* Adjusted width */
           border-left: 1px solid #444;
           border-right: none;
         `
       : css`
           left: unset;
-          right: ${$isOpen ? '0px' : '-360px'};
+          right: ${$isOpen ? '0px' : '-950px'}; /* Adjusted width */
           border-right: 1px solid #444;
           border-left: none;
         `}
-  width: 360px;
+  
   transition: all 0.3s ease-in-out;
 `;
 
@@ -242,6 +245,13 @@ const MessageBubble = styled.div`
   border-radius: 12px;
   background-color: ${({ isUser, theme }) => (isUser ? theme.colors.primary : '#33333d')};
   color: ${({ isUser, theme }) => (isUser ? theme.colors.background : 'white')};
+  
+  /* --- CHANGE #2: LIST STYLING --- */
+  ul, ol {
+    padding-inline-start: 25px;
+    margin-block-start: 0.5em;
+    margin-block-end: 0.5em;
+  }
 `;
 
 const Timestamp = styled.div`
@@ -322,7 +332,7 @@ const AITypingIndicator = styled.div`
 `;
 
 
-const Chatbot = ({ course, courseCompletedAndPassed, isRTL, fixedSideOffset = '20px', lessonContent }) => { // Corrected
+const Chatbot = ({ course, courseCompletedAndPassed, isRTL, fixedSideOffset = '20px', lessonContent }) => {
   const { t } = useTranslation();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -334,30 +344,37 @@ const Chatbot = ({ course, courseCompletedAndPassed, isRTL, fixedSideOffset = '2
   const chatWindowRef = useRef(null);
 
   const courseTopicForTranslation = course?.topic || 'this Course'; 
-  const storageKey = `tanisi-chat-${course?._id || 'default'}`;
 
+  // --- MODIFIED: Fetch chat history from the API when the modal opens ---
   useEffect(() => {
-    try {
-      const storedMessages = localStorage.getItem(storageKey);
-      if (storedMessages) {
-        setMessages(JSON.parse(storedMessages));
-      }
-    } catch (error) {
-      console.error("Failed to load chat history:", error);
-      setMessages([]);
-    }
-  }, [storageKey]);
+    const fetchChatHistory = async () => {
+        if (isModalOpen && course?._id) {
+            try {
+                const token = localStorage.getItem('token');
+                const config = { headers: { 'x-auth-token': token } };
+                const res = await axios.get(`/api/course/chat/${course._id}`, config);
+                setMessages(res.data);
+            } catch (error) {
+                console.error("Failed to load chat history from DB:", error);
+                // Optionally show an error message in chat
+                setMessages([{
+                    text: t('errors.chatbot_connection_error'),
+                    isUser: false,
+                    timestamp: new Date()
+                }]);
+            }
+        }
+    };
 
+    fetchChatHistory();
+  }, [isModalOpen, course?._id, t]);
+
+  // --- MODIFIED: Scroll to bottom whenever messages update ---
   useEffect(() => {
-    try {
-        localStorage.setItem(storageKey, JSON.stringify(messages));
-    } catch (error) {
-        console.error("Failed to save chat history:", error);
-    }
     if (chatWindowRef.current) {
         chatWindowRef.current.scrollTop = chatWindowRef.current.scrollHeight;
     }
-  }, [messages, storageKey]);
+  }, [messages]);
 
   const handleOpenModal = () => {
     setIsModalOpen(true);
@@ -373,26 +390,48 @@ const Chatbot = ({ course, courseCompletedAndPassed, isRTL, fixedSideOffset = '2
     setShowBubble(false);
   };
 
+  // --- MODIFIED: `handleSendMessage` now optimistically updates the UI ---
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!userInput.trim() || courseCompletedAndPassed || !course?._id || isAITyping) return; 
 
     const userMessage = { text: userInput, isUser: true, timestamp: new Date() };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    const currentInput = userInput;
+    
+    // Optimistically update the UI with the user's message
+    setMessages(prevMessages => [...prevMessages, userMessage]);
     setUserInput('');
     setIsAITyping(true); 
     
     try {
         const token = localStorage.getItem('token');
         const config = { headers: { 'Content-Type': 'application/json', 'x-auth-token': token }};
-        const body = { courseId: course._id, userQuery: userInput, lessonContent };
+        
+        // Pass previous messages for context
+        const chatHistoryForApi = messages.slice(-10); // Send last 10 messages for context
+
+        const body = { 
+            courseId: course._id, 
+            userQuery: currentInput, 
+            lessonContent,
+            chatHistory: chatHistoryForApi 
+        };
         const res = await axios.post('/api/course/chatbot', body, config);
         
-        setMessages([...newMessages, { text: res.data.response, isUser: false, timestamp: new Date() }]);
+        const aiMessage = { text: res.data.response, isUser: false, timestamp: new Date() };
+        
+        // Update the UI with the AI's response
+        setMessages(prevMessages => [...prevMessages, aiMessage]);
+
     } catch (error) {
         console.error("Chatbot API error:", error);
-        setMessages([...newMessages, { text: t('errors.chatbot_connection_error', { defaultValue: 'Sorry, something went wrong. Please try again.' }), isUser: false, timestamp: new Date() }]);
+        const errorMessage = { 
+            text: t('errors.chatbot_connection_error', { defaultValue: 'Sorry, something went wrong. Please try again.' }), 
+            isUser: false, 
+            timestamp: new Date() 
+        };
+        // If the API call fails, add an error message to the chat
+        setMessages(prevMessages => [...prevMessages, errorMessage]);
     } finally {
         setIsAITyping(false); 
     }
@@ -463,7 +502,7 @@ const Chatbot = ({ course, courseCompletedAndPassed, isRTL, fixedSideOffset = '2
               {isAITyping && (
                 <AITypingIndicator $isRTL={isRTL}>
                     <InlineSpinner />
-                    <span>{t('chatbot_typing_message')}</span>
+                    <span>{t('errors.chatbot_typing_message')}</span>
                 </AITypingIndicator>
               )}
             </ChatWindow>

@@ -33,7 +33,7 @@
     "pre_generated_courses": "Pre-Generated Courses",
     "my_courses": "My Courses",
     "my_certificates": "My Certificates",
-    "my_study_groups": "My Study Groups",
+    "my_study_groups": "Study Groups & Chats",
     "help_support": "Help & Support",
     "seek_connect": "Seek Connect",
     "events": "Events & News",
@@ -102,7 +102,7 @@
   "search_chat_placeholder": "Search chat...",
   "chatbot_course_completed_message": "TANISI AI Tutor is no longer available for new queries in this course as you have completed it. You can still view your previous chats.",
   "chatbot_disabled_input_placeholder": "Chat disabled for completed course.",
-  "chatbot_active_input_placeholder": "Ask a question...",
+  "chatbot_active_input_placeholder": "Search Your Prervious Chats...",
   "errors": {
     "generic": "An error occurred. Please try again.",
     "first_name_required": "First name is required.",
@@ -192,5 +192,32 @@
     "enter_objective_placeholder": "Enter your objective here...",
     "objective_label": "Objective",
     "course_generation.cancel_button":"Cancel"
+  },
+
+   "quiz": {
+    "instruction_modal_title": "Quiz Instructions",
+    "instruction_passing_score": "You must score 60% or more to earn a certificate.",
+    "instruction_how_to": "To answer a question, select an option and click 'Next Question' to proceed.",
+    "instruction_feedback": "After selecting an answer, correct choices will be highlighted in green and incorrect ones in red.",
+    "start_quiz_button": "Start Quiz"
+  },
+
+    "score_card": {
+    "title_pass": "Congratulations, You Passed!",
+    "title_fail": "Keep Practicing!",
+    "subtitle_pass": "You have a solid understanding of the topic and have unlocked your certificate.",
+    "subtitle_fail": "No worries! You can review the course material and retake the quiz anytime.",
+    "score_text": "You scored",
+    "get_certificate_button": "Get Certificate",
+    "back_to_course_button": "Back to Course"
+  },
+    "my_certificates_page": {
+    "title": "My Certificates",
+    "no_certificates": "You haven't earned any certificates yet. Complete a course and pass the quiz to see it here!",
+    "view_certificate_button": "View Certificate"
+  },
+    "study_groups": {
+    "validation_error": "Please provide a group name, description, and select at least one member to start a group."
   }
+
 }

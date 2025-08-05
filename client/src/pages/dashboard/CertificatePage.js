@@ -8,7 +8,8 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import Preloader from '../../components/common/Preloader';
 import certificateBg from '../../assets/SMC-Certificate.jpg';
-import { FiDownload, FiX } from 'react-icons/fi';
+import { FiDownload, FiX, FiHome } from 'react-icons/fi'; // 1. Import the FiHome icon
+import { useTranslation } from 'react-i18next'; // 2. Import the translation hook
 
 const PageContainer = styled.div`
   padding: 2rem;
@@ -84,9 +85,9 @@ const BottomActionsContainer = styled.div`
   margin-bottom: 1rem;
   display: flex;
   justify-content: center;
-  gap: 1.5rem; 
+  gap: 1rem; // Adjusted gap for three buttons
   width: 100%;
-  max-width: 500px; 
+  max-width: 650px; // Increased max-width for three buttons
 `;
 
 const ActionButton = styled.button`
@@ -113,13 +114,12 @@ const ActionButton = styled.button`
 const CertificatePage = () => {
     const { courseId } = useParams();
     const navigate = useNavigate();
+    const { t } = useTranslation(); // 3. Initialize the hook
     const [course, setCourse] = useState(null);
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const certificateRef = useRef();
 
-    // The verification URL for the QR code should point to the public verification endpoint
-    // It uses window.location.origin to adapt to localhost or deployed domain.
     const verificationUrl = `${window.location.origin}/verify/${courseId}/${user?.id}`;
 
     useEffect(() => {
@@ -134,7 +134,6 @@ const CertificatePage = () => {
                 setUser(userRes.data.user);
             } catch (error) {
                 console.error("Failed to fetch data:", error);
-                // Redirect to dashboard or login if data fetch fails
                 navigate('/dashboard'); 
             } finally {
                 setLoading(false);
@@ -172,9 +171,14 @@ const CertificatePage = () => {
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
             pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight); 
-            const sanitizedTopic = course.topic.replace(/[^a-zA-Z0-9]/g, '_');
+            const sanitizedTopic = (course.englishTopic || course.topic).replace(/[^a-zA-Z0-9]/g, '_');
             pdf.save(`SeekMYCOURSE-Certificate-${sanitizedTopic}.pdf`);
         });
+    };
+
+    // 4. Function to handle navigation
+    const handleBackToHome = () => {
+        navigate('/dashboard');
     };
 
     if (loading) return <Preloader />;
@@ -183,7 +187,7 @@ const CertificatePage = () => {
         <PageContainer>
             <CertificateWrapper ref={certificateRef}>
                 <UserName>{user ? formatName(user.firstName, user.lastName) : 'Your Name'}</UserName>
-                <CourseName>{course ? course.topic.toUpperCase() : 'YOUR COURSE TOPIC'}</CourseName>
+                <CourseName>{course ? (course.englishTopic || course.topic).toUpperCase() : 'YOUR COURSE TOPIC'}</CourseName>
                 <CompletionDate>{formatDate(new Date())}</CompletionDate>
                 <QrCodeContainer>
                     <QRCodeSVG
@@ -198,10 +202,14 @@ const CertificatePage = () => {
 
             <BottomActionsContainer>
                 <ActionButton primary onClick={handleDownload}>
-                    <FiDownload /> Download Certificate
+                    <FiDownload /> {t('course_generation.export_course_to_pdf', { defaultValue: 'Download Certificate' })}
+                </ActionButton>
+                {/* --- 5. THE NEW BUTTON --- */}
+                <ActionButton onClick={handleBackToHome}>
+                    <FiHome /> {t('course_generation.back_to_home_button_text', { defaultValue: 'Back to Home' })}
                 </ActionButton>
                 <ActionButton onClick={() => navigate(`/course/${courseId}`)}>
-                    <FiX /> Close Certificate
+                    <FiX /> Close
                 </ActionButton>
             </BottomActionsContainer>
         </PageContainer>

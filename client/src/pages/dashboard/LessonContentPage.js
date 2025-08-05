@@ -8,7 +8,8 @@ import Preloader from '../../components/common/Preloader';
 import { Modal, ModalText, ModalButtonContainer, ModalButton } from '../../components/common/Modal';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
-import Chatbot from '../../components/common/Chatbot';
+// REMOVE the Chatbot import from this file
+// import Chatbot from '../../components/common/Chatbot';
 
 const LessonWrapper = styled.div`
     padding: 1rem;
@@ -43,6 +44,7 @@ const NoVideoPlaceholder = styled.div`
     font-style: italic;
     border-radius: 12px;
     margin-bottom: 1.5rem;
+    position: relative;
 `;
 
 const VideoControls = styled.div`
@@ -394,13 +396,7 @@ const LessonContentPage = () => {
 
             <ContentBody dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(lesson.content || t('course_generation.loading_text')) }} />
 
-             <Chatbot
-                course={parentCourse}
-                courseCompletedAndPassed={courseCompletedAndPassed}
-                isRTL={isRTL}
-                fixedSideOffset={'20px'} // Assuming this is passed as a prop
-                lessonContent={lesson.content} // THIS IS THE NEW LINE
-            />
+             {/* REMOVE THE CHATBOT FROM HERE */}
 
          
         </PageContainer>

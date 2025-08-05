@@ -43,10 +43,16 @@ const CourseSchema = new mongoose.Schema({
     required: true,
   },
   englishTopic: { type: String },
-  objective: { // CHANGED: Now an array of strings
+  objective: {
+    type: [String],
+  },
+  englishObjective: { // NEW: Field for English objectives
     type: [String],
   },
   outcome: {
+    type: String,
+  },
+  englishOutcome: { // NEW: Field for English outcome
     type: String,
   },
   language: {
